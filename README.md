@@ -1,5 +1,7 @@
 # forge-attest
 
+[![attest](https://github.com/omnisig/forge-attest/actions/workflows/attest.yml/badge.svg)](https://github.com/omnisig/forge-attest/actions/workflows/attest.yml)
+
 **Prove that a Gnosis Safe transaction is exactly the output of a specific Forge
 script — and was not manipulated on its way to the Safe.**
 
