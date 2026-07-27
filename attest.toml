@@ -1,0 +1,25 @@
+# forge-attest configuration
+#
+# Everything here is the "claim" being attested: a specific commit of a producer
+# repo, the script it runs, and the exact outputs that commit must produce. Point
+# `producer_repo` at your own ops repo and fill in the pinned values to verify
+# your own Safe transactions.
+
+# --- Producer: the separate repo whose Forge script builds the Safe tx ---------
+producer_repo   = "file:///home/carter/Documents/1sig/forge-attest-example-safe-ops"
+producer_commit = "df1d6f369294b519e3c87fd5f7a5bdb980d91d01"
+producer_setup  = ""                                    # optional shell run before the script, e.g. "forge install"
+producer_script = "script/BuildSafeTx.s.sol:BuildSafeTx"
+output_path     = "out/safe-tx.json"                    # relative to the producer repo root
+
+# --- Pinned expectations (what that commit MUST produce) -----------------------
+expected_output_sha256 = "f8b05de9d16a5248543d266aedbd64b1275fd5165a111ccfe430f3c8ff415cd0"
+expected_safe_tx_hash  = "0xd0e33f3b88aceb5122db6ad935c1d709c7602f8ed92fc6b27bdd507902bdf534"
+
+# --- Live check against the Safe Transaction Service (optional) -----------------
+# Used to confirm the tx actually queued in the Safe matches the script output.
+# Leave blank to skip. The demo Safe/nonce below are illustrative and will simply
+# be skipped when no such transaction exists on the service.
+safe_network = "ethereum"
+safe_address = "0x111CEEee040739fD91D29C34C33E6B3E112F2177"
+safe_nonce   = "42"

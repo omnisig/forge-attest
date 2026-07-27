@@ -1,0 +1,34 @@
+name: attest
+
+# Continuous attestation. Because the whole pipeline is deterministic, every run
+# re-proves — publicly and with a timestamp — that the Safe transaction pinned in
+# attest.toml is exactly the output of the pinned producer commit. A green run is
+# the artifact a third party can trust without re-running anything themselves.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *" # daily: also re-checks the live Safe queue for drift
+
+permissions:
+  contents: read
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Attest
+        # NOTE: in CI, producer_repo in attest.toml must be a reachable git URL
+        # (e.g. https://github.com/you/your-ops-repo), not a local file:// path.
+        run: ./attest.sh --config attest.toml
+
+      # To make the live Safe Transaction Service comparison mandatory (fail the
+      # build if the queued tx drifts from the script output), use instead:
+      #   run: ./attest.sh --config attest.toml --require-live

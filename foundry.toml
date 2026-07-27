@@ -1,0 +1,10 @@
+[profile.default]
+test = "test"
+src = "test"              # no first-class contracts; keep forge from scanning elsewhere
+out = "forge-out"
+libs = []                 # `lib/` holds bash tooling, not Solidity deps
+solc = "0.8.28"
+optimizer = true
+
+# The cross-check test reads the produced tx JSON and writes back its computed hash.
+fs_permissions = [{ access = "read-write", path = "./out" }]
