@@ -14,7 +14,7 @@
 
 # --- Producer -------------------------------------------------------------------
 producer_repo   = "https://github.com/omnisig/forge-attest-example-safe-ops"
-producer_commit = ""                                          # 40-hex commit sha
+producer_commit = "31d44a89684f6f3721eae59ada1d230a1738f6bb"
 producer_setup  = ""                                          # e.g. "forge install"
 producer_script = "script/BuildSafeBatch.s.sol:BuildSafeBatch"
 output_path     = "out/safe-batch.json"
@@ -46,13 +46,14 @@ refund_receiver = "0x0000000000000000000000000000000000000000"
 # from the normalised SafeTx and is unaffected by timestamps, key order, address
 # checksum casing or string-vs-number scalars.
 #
-# Run once with these blank; the orchestrator prints both values for you to paste
-# back in after you have reviewed the transaction.
+# The values below were derived from the pinned commit above; run once with them
+# blank and the orchestrator prints them for you to paste back in after you have
+# reviewed the transaction.
 expected_output_sha256    = ""
-expected_canonical_sha256 = ""
-expected_safe_tx_hash     = ""
+expected_canonical_sha256 = "3e04aa55c436e16cae1ce12e2c43922536ce1a1dfad9d6041c874ad382768efd"
+expected_safe_tx_hash     = "0x7f9d67d21eabf50afc3c0ef625d519918b4ca7037730caa7544576e12ad0c115"
 
 # --- The Safe the batch is bound to -------------------------------------------------
 safe_network = "ethereum"
-safe_address = ""
-safe_nonce   = ""
+safe_address = "0x111CEEee040739fD91D29C34C33E6B3E112F2177"
+safe_nonce   = "43"
