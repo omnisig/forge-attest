@@ -251,6 +251,50 @@ contract SafeTxHashTest {
         require(t.hash() != SafeTxLib.readAny(_read("tx-builder-frax-optimism.json"), _binding()).hash(), "same hash");
     }
 
+    // ------------------------------------------------- a batch that binds itself
+
+    /// The Transaction Builder schema has a slot for the Safe a batch was built
+    /// for — `meta.createdFromSafeAddress`. A producer that fills it in makes the
+    /// file self-describing, so the Safe no longer has to be supplied out of band.
+    function test_BatchDeclaringItsOwnSafe() external view {
+        string memory json = _read("tx-builder-self-binding.json");
+        require(SafeTxLib.readSafeAddress(json) == SAFE, "declared safe");
+
+        SafeTxLib.Binding memory b;
+        b.nonce = NONCE; // deliberately no safe: the file supplies it
+
+        SafeTxLib.SafeTx memory t = SafeTxLib.readAny(json, b);
+        require(t.safe == SAFE, "safe taken from meta");
+        require(t.chainId == 1, "chainId");
+        _assertEq(t.hash(), 0x451bf409acadd38b8aecde55d6fd4b4f2c0689465525db81f10ec6426a376d83, "self-binding batch");
+    }
+
+    /// A config that agrees with the file is fine and is the useful case: two
+    /// independent statements of the same fact.
+    function test_DeclaredSafeAgreeingWithConfig() external view {
+        SafeTxLib.SafeTx memory t = SafeTxLib.readAny(_read("tx-builder-self-binding.json"), _binding());
+        _assertEq(t.hash(), 0x451bf409acadd38b8aecde55d6fd4b4f2c0689465525db81f10ec6426a376d83, "agreeing config");
+    }
+
+    /// A config that contradicts the file is a tampering signal — someone pointed
+    /// a reviewed batch at a different Safe — and must never be silently resolved.
+    function test_RejectsDeclaredSafeContradictingConfig() external {
+        SafeTxLib.Binding memory b = _binding();
+        b.safe = address(0xB0B);
+
+        (bool ok, bytes memory err) =
+            address(this).call(abi.encodeCall(this.readAnyExternal, (_read("tx-builder-self-binding.json"), b)));
+        require(!ok, "expected revert");
+        require(_contains(err, "safe address mismatch"), "wrong revert");
+    }
+
+    /// Files with no such declaration keep working exactly as before.
+    function test_UndeclaredSafeStillComesFromConfig() external view {
+        string memory json = _read("tx-builder-frax-optimism.json");
+        require(SafeTxLib.readSafeAddress(json) == address(0), "nothing declared");
+        require(SafeTxLib.readAny(json, _binding()).safe == SAFE, "safe from config");
+    }
+
     // ------------------------------------------------------- format 3: bare array
 
     function test_BareTransactionArray() external view {
@@ -329,6 +373,11 @@ contract SafeTxHashTest {
 
     function hashExternal(SafeTxLib.SafeTx calldata t) external pure returns (bytes32) {
         return SafeTxLib.hash(t);
+    }
+
+    function readAnyExternal(string calldata json, SafeTxLib.Binding calldata b) external view returns (bytes32) {
+        SafeTxLib.Binding memory binding = b;
+        return SafeTxLib.readAny(json, binding).hash();
     }
 
     // ----------------------------------------------------------------- utilities

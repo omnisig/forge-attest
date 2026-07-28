@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "chainId": "1",
+  "createdAt": 0,
+  "meta": {
+    "name": "Self-binding batch",
+    "description": "",
+    "createdFromSafeAddress": "0x111CEEee040739fD91D29C34C33E6B3E112F2177",
+    "txBuilderVersion": "frax-standard-solidity"
+  },
+  "transactions": [
+    {
+      "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "value": "0",
+      "data": "0x095ea7b3000000000000000000000000000000000000000000000000000000000000beef0000000000000000000000000000000000000000000000000000000000000000",
+      "contractMethod": null,
+      "contractInputsValues": null
+    },
+    {
+      "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "value": "1000000000000000000",
+      "data": "0xa9059cbb000000000000000000000000000000000000000000000000000000000000dead00000000000000000000000000000000000000000000000000000000000f4240",
+      "contractMethod": null,
+      "contractInputsValues": null
+    }
+  ]
+}
