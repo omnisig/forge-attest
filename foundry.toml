@@ -7,4 +7,7 @@ solc = "0.8.28"
 optimizer = true
 
 # The cross-check test reads the produced tx JSON and writes back its computed hash.
-fs_permissions = [{ access = "read-write", path = "./out" }]
+fs_permissions = [
+    { access = "read-write", path = "./out" },
+    { access = "read", path = "./test/fixtures" },
+]

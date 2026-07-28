@@ -1,0 +1,25 @@
+{
+  "version": "1.0",
+  "chainId": 1,
+  "createdAt": 1760128999000,
+  "meta": { "name": "Transactions Batch", "description": "" },
+  "transactions": [
+    {
+      "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          { "name": "to", "type": "address" },
+          { "name": "amount", "type": "uint256" }
+        ],
+        "name": "transfer",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x000000000000000000000000000000000000dEaD",
+        "amount": "1000000"
+      }
+    }
+  ]
+}

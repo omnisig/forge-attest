@@ -12,14 +12,59 @@ producer_setup  = ""                                    # optional shell run bef
 producer_script = "script/BuildSafeTx.s.sol:BuildSafeTx"
 output_path     = "out/safe-tx.json"                    # relative to the producer repo root
 
-# --- Pinned expectations (what that commit MUST produce) -----------------------
-expected_output_sha256 = "f8b05de9d16a5248543d266aedbd64b1275fd5165a111ccfe430f3c8ff415cd0"
-expected_safe_tx_hash  = "0xd0e33f3b88aceb5122db6ad935c1d709c7602f8ed92fc6b27bdd507902bdf534"
+# --- Shape of the producer's JSON ----------------------------------------------
+# input_format: auto (default) | safe-tx | tx-builder | tx-array
+#   safe-tx     a flat object carrying the full EIP-712 SafeTx field set
+#   tx-builder  a Safe{Wallet} Transaction Builder batch — `{ version, chainId,
+#               createdAt, meta, transactions: [...] }` — the shape emitted by
+#               FraxFinance's `SafeTxHelper.writeTxs` and by "export batch"
+#   tx-array    a bare JSON array of { to, value, data, operation? }
+input_format = "auto"
 
-# --- Live check against the Safe Transaction Service (optional) -----------------
-# Used to confirm the tx actually queued in the Safe matches the script output.
-# Leave blank to skip. The demo Safe/nonce below are illustrative and will simply
-# be skipped when no such transaction exists on the service.
+# batch_mode: how a batch becomes the single transaction owners sign.
+#   auto      (default) multiSend when the batch holds >1 tx, direct call for 1
+#   multisend always wrap, even a single-transaction batch
+#   single    require exactly one transaction and send it directly
+batch_mode = "auto"
+
+# MultiSend contract to delegatecall. Blank picks the canonical MultiSendCallOnly
+# for `safe_version` — the same one Safe{Wallet} uses. Set it explicitly when:
+#   - the batch contains inner DELEGATECALLs, which MultiSendCallOnly rejects
+#     (use the plain MultiSend, 0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761 on 1.3.0)
+#   - the target chain deploys Safe elsewhere (zkSync Era, Abstract, …)
+multisend_address = ""
+safe_version      = "1.3.0"
+chain_id          = ""      # only needed when the JSON carries no chainId
+
+# Gas/refund fields. Batch formats never carry these; the Safe UI submits zeros.
+safe_tx_gas     = "0"
+base_gas        = "0"
+gas_price       = "0"
+gas_token       = "0x0000000000000000000000000000000000000000"
+refund_receiver = "0x0000000000000000000000000000000000000000"
+
+# --- Pinned expectations (what that commit MUST produce) -----------------------
+# expected_output_sha256    byte-exact hash of the producer's own JSON. Only
+#                           usable when the producer is byte-deterministic —
+#                           leave blank for writers that stamp a `createdAt`.
+# expected_canonical_sha256 hash of the normalised SafeTx. Stable by construction
+#                           (fixed key order, quoted scalars, lowercase hex), so
+#                           it survives volatile metadata and formatting drift.
+# expected_safe_tx_hash     the EIP-712 digest owners sign.
+expected_output_sha256    = "f8b05de9d16a5248543d266aedbd64b1275fd5165a111ccfe430f3c8ff415cd0"
+expected_canonical_sha256 = "9057b9be885254f9dd33b26d85d42f9cdc10b1010d66e2046fb8bf747cd1c073"
+expected_safe_tx_hash     = "0xd0e33f3b88aceb5122db6ad935c1d709c7602f8ed92fc6b27bdd507902bdf534"
+
+# --- The Safe this transaction belongs to ---------------------------------------
+# For batch formats these are *inputs to the hash*, not just live-check settings:
+# a Transaction Builder export carries no Safe address and no nonce, so the same
+# batch signs differently on a different Safe or at a different nonce. Supplying
+# them here is what binds the batch to one specific transaction.
+#
+# `safe_network` additionally enables the live comparison against the Safe
+# Transaction Service. Leave it blank to skip that check. The demo Safe/nonce
+# below are illustrative and will simply be skipped when no such transaction
+# exists on the service.
 safe_network = "ethereum"
 safe_address = "0x111CEEee040739fD91D29C34C33E6B3E112F2177"
 safe_nonce   = "42"

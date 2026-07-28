@@ -7,13 +7,15 @@
 #    1. clones it at that exact commit,
 #    2. re-runs its Forge script deterministically,
 #    3. checks the emitted JSON's sha256 against a pinned value,      (source integrity)
-#    4. derives the Safe EIP-712 tx hash two independent ways         (cast + Solidity)
+#    4. normalises it — any supported Safe JSON shape, including a
+#       Transaction Builder batch — into one canonical SafeTx,        (canonical form)
+#    5. derives the Safe EIP-712 tx hash two independent ways         (cast + Solidity)
 #       and checks both against a pinned expected hash,
-#    5. optionally checks that same hash against what is actually
+#    6. optionally checks that same hash against what is actually
 #       queued in the Safe, via the Safe Transaction Service.         (live integrity)
 #
-#  Matching hashes across all layers prove the submitted Safe tx is byte-for-byte
-#  the script's output.
+#  Matching hashes across all layers prove the submitted Safe tx is exactly what
+#  the script produced.
 #
 #  Usage: ./attest.sh [--config attest.toml] [--require-live] [--keep] [--help]
 set -euo pipefail
@@ -49,7 +51,21 @@ producer_setup=$(toml_get "$CONFIG" producer_setup)
 producer_script=$(toml_get "$CONFIG" producer_script)
 output_path=$(toml_get "$CONFIG" output_path)
 expected_sha=$(toml_get "$CONFIG" expected_output_sha256)
+expected_canonical_sha=$(toml_get "$CONFIG" expected_canonical_sha256)
 expected_hash=$(lc "$(toml_get "$CONFIG" expected_safe_tx_hash)")
+
+# Shape of the producer's JSON, and the Safe-level facts a batch cannot carry.
+input_format=$(toml_get "$CONFIG" input_format)
+batch_mode=$(toml_get "$CONFIG" batch_mode)
+multisend_address=$(toml_get "$CONFIG" multisend_address)
+safe_version=$(toml_get "$CONFIG" safe_version)
+chain_id=$(toml_get "$CONFIG" chain_id)
+safe_tx_gas=$(toml_get "$CONFIG" safe_tx_gas)
+base_gas=$(toml_get "$CONFIG" base_gas)
+gas_price=$(toml_get "$CONFIG" gas_price)
+gas_token=$(toml_get "$CONFIG" gas_token)
+refund_receiver=$(toml_get "$CONFIG" refund_receiver)
+
 safe_network=$(toml_get "$CONFIG" safe_network)
 safe_address=$(toml_get "$CONFIG" safe_address)
 safe_nonce=$(toml_get "$CONFIG" safe_nonce)
@@ -97,6 +113,9 @@ out_json="$WORK/repo/$output_path"
 ok "produced $output_path"
 
 # --- 3. source integrity: sha256 of the emitted JSON --------------------------
+# Byte-exact, so it only applies to producers whose output has no volatile
+# metadata. Batch writers commonly stamp a `createdAt`; for those, pin
+# expected_canonical_sha256 (step 4) instead — it is stable by construction.
 step "Checking output integrity (sha256)"
 got_sha=$(sha256sum "$out_json" | awk '{print $1}')
 printf '    sha256   : %s\n' "$got_sha"
@@ -108,9 +127,45 @@ else
   record_fail "output sha256 mismatch (expected $expected_sha)"
 fi
 
-# --- 4a. derive the Safe tx hash via cast -------------------------------------
+# --- 4. normalise to the canonical SafeTx -------------------------------------
+step "Normalising to canonical SafeTx"
+norm_args=(--input "$out_json" --summary --print-digest)
+add_arg() { [[ -n "$2" ]] && norm_args+=("$1" "$2"); return 0; }
+add_arg --format          "$input_format"
+add_arg --batch-mode      "$batch_mode"
+add_arg --multisend       "$multisend_address"
+add_arg --safe-version    "$safe_version"
+add_arg --chain-id        "$chain_id"
+add_arg --safe            "$safe_address"
+add_arg --nonce           "$safe_nonce"
+add_arg --safe-tx-gas     "$safe_tx_gas"
+add_arg --base-gas        "$base_gas"
+add_arg --gas-price       "$gas_price"
+add_arg --gas-token       "$gas_token"
+add_arg --refund-receiver "$refund_receiver"
+
+canonical="$WORK/canonical-safe-tx.json"
+bash "$SCRIPT_DIR/lib/normalize.sh" "${norm_args[@]}" \
+  >"$canonical" 2>"$WORK/normalize.err" \
+  || { cat "$WORK/normalize.err" >&2; die "could not normalise $output_path"; }
+grep -v '^CANONICAL_SHA256=' "$WORK/normalize.err" || true
+
+canonical_sha=$(sha256sum "$canonical" | awk '{print $1}')
+printf '    canonical: %s\n' "$canonical_sha"
+if [[ -z "$expected_canonical_sha" ]]; then
+  warn "no expected_canonical_sha256 pinned — skipping canonical-integrity check"
+elif [[ "$canonical_sha" == "$expected_canonical_sha" ]]; then
+  ok "matches pinned canonical sha256"
+else
+  record_fail "canonical sha256 mismatch (expected $expected_canonical_sha)"
+fi
+if [[ -z "$expected_sha" && -z "$expected_canonical_sha" ]]; then
+  warn "neither sha256 is pinned — nothing anchors this run to a reviewed output"
+fi
+
+# --- 5a. derive the Safe tx hash via cast -------------------------------------
 step "Deriving Safe tx hash (cast)"
-eval "$(bash "$SCRIPT_DIR/lib/derive.sh" "$out_json")"   # sets DOMAIN_HASH / MESSAGE_HASH / SAFE_TX_HASH
+eval "$(bash "$SCRIPT_DIR/lib/derive.sh" "$canonical")"   # sets DOMAIN_HASH / MESSAGE_HASH / SAFE_TX_HASH
 cast_hash=$(lc "$SAFE_TX_HASH")
 printf '    domain   : %s\n' "$DOMAIN_HASH"
 printf '    message  : %s\n' "$MESSAGE_HASH"
@@ -121,12 +176,22 @@ else
   ok "cast derivation done"
 fi
 
-# --- 4b. cross-check the Safe tx hash via Solidity (forge test) ---------------
+# --- 5b. cross-check the Safe tx hash via Solidity (forge test) ---------------
+# The Solidity side re-reads the *producer's* JSON, not the canonical form, so it
+# redoes the batch folding independently — a bug in normalize.sh cannot hide here.
 step "Cross-checking Safe tx hash (Solidity)"
 mkdir -p "$SCRIPT_DIR/out"
-cp "$out_json" "$SCRIPT_DIR/out/safe-tx.json"
+cp "$out_json" "$SCRIPT_DIR/out/producer-tx.json"
+cp "$canonical" "$SCRIPT_DIR/out/canonical-safe-tx.json"
 rm -f "$SCRIPT_DIR/out/solidity-safe-tx-hash.txt"
-if ATTEST_JSON="out/safe-tx.json" ATTEST_EXPECTED_SAFE_TX_HASH="${expected_hash:-$cast_hash}" \
+if ATTEST_JSON="out/producer-tx.json" \
+   ATTEST_EXPECTED_SAFE_TX_HASH="${expected_hash:-$cast_hash}" \
+   ATTEST_SAFE="$safe_address" \
+   ATTEST_NONCE="$safe_nonce" \
+   ATTEST_CHAIN_ID="$chain_id" \
+   ATTEST_SAFE_VERSION="$safe_version" \
+   ATTEST_MULTISEND="$multisend_address" \
+   ATTEST_FORCE_MULTISEND="$([[ "$batch_mode" == "multisend" ]] && echo 1 || echo '')" \
      forge test --root "$SCRIPT_DIR" --match-contract AttestTest -q >"$WORK/forge-test.log" 2>&1; then
   sol_hash=$(lc "$(cat "$SCRIPT_DIR/out/solidity-safe-tx-hash.txt" 2>/dev/null || echo '')")
   printf '    safeTx   : %s\n' "${sol_hash:-<unavailable>}"
@@ -140,7 +205,7 @@ else
   record_fail "Solidity cross-check (forge test) failed"
 fi
 
-# --- 5. live integrity: compare against the Safe Transaction Service ----------
+# --- 6. live integrity: compare against the Safe Transaction Service ----------
 step "Live check against Safe Transaction Service"
 if [[ -z "$safe_network" || -z "$safe_address" || -z "$safe_nonce" ]]; then
   warn "safe_network/address/nonce not fully set — skipping live check"

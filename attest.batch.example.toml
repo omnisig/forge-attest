@@ -1,0 +1,58 @@
+# forge-attest — attesting a Safe{Wallet} Transaction Builder batch
+#
+# A worked example for the shape emitted by FraxFinance's `SafeTxHelper.writeTxs`
+# and by the Safe UI's "export batch". Copy it, fill in the four pinned values,
+# and run:
+#
+#   ./attest.sh --config attest.batch.toml
+#
+# The difference from a flat SafeTx claim is that a batch carries no Safe address,
+# no nonce and no gas fields. Those are supplied here, and they are *inputs to the
+# hash* — the same batch signs as a different transaction on a different Safe or
+# at a different nonce. Getting them wrong produces a hash mismatch, not a silent
+# pass.
+
+# --- Producer -------------------------------------------------------------------
+producer_repo   = "https://github.com/omnisig/forge-attest-example-safe-ops"
+producer_commit = ""                                          # 40-hex commit sha
+producer_setup  = ""                                          # e.g. "forge install"
+producer_script = "script/BuildSafeBatch.s.sol:BuildSafeBatch"
+output_path     = "out/safe-batch.json"
+
+# --- Input shape ------------------------------------------------------------------
+# `auto` detects the batch envelope; naming it explicitly is a cheap extra guard
+# against a producer that silently changes its output format.
+input_format = "tx-builder"
+batch_mode   = "auto"     # multiSend when >1 tx, direct call when exactly 1
+
+# Blank uses the canonical MultiSendCallOnly for `safe_version`, which is what
+# Safe{Wallet} does. Point this at the plain MultiSend
+# (0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761 on 1.3.0) only if the batch contains
+# inner DELEGATECALLs.
+multisend_address = ""
+safe_version      = "1.3.0"
+chain_id          = ""    # the batch envelope already carries chainId
+
+safe_tx_gas     = "0"
+base_gas        = "0"
+gas_price       = "0"
+gas_token       = "0x0000000000000000000000000000000000000000"
+refund_receiver = "0x0000000000000000000000000000000000000000"
+
+# --- Pinned expectations ----------------------------------------------------------
+# `SafeTxHelper` stamps `createdAt` with `block.timestamp * 1000`, so the raw bytes
+# differ on every run and a byte-exact sha256 is not pinnable — leave
+# expected_output_sha256 blank and pin the canonical digest instead. It is computed
+# from the normalised SafeTx and is unaffected by timestamps, key order, address
+# checksum casing or string-vs-number scalars.
+#
+# Run once with these blank; the orchestrator prints both values for you to paste
+# back in after you have reviewed the transaction.
+expected_output_sha256    = ""
+expected_canonical_sha256 = ""
+expected_safe_tx_hash     = ""
+
+# --- The Safe the batch is bound to -------------------------------------------------
+safe_network = "ethereum"
+safe_address = ""
+safe_nonce   = ""
