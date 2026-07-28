@@ -16,7 +16,24 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    # The verifier's own tests: the Solidity and cast derivations must agree on
+    # every supported JSON shape before any attestation they produce means much.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Solidity tests
+        run: forge test -vv
+
+      - name: Shell tests (normalisation, cross-derivation, end-to-end)
+        run: ./test/shell/run.sh
+
   attest:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
