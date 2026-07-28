@@ -104,6 +104,12 @@ So `safe_address` and `safe_nonce` in `attest.toml` are *inputs to the hash* for
 batch formats, not just live-check settings. The same batch on a different Safe, or
 at a different nonce, is a different transaction and will not match a pin.
 
+The schema does have a slot for the Safe — `meta.createdFromSafeAddress` — and
+`forge-attest` reads it. A producer that fills it in makes the file self-binding, so
+`safe_address` becomes an independent cross-check rather than a required input; if
+the two disagree, that is a tampering signal and the run fails rather than picking
+one. Nothing carries the nonce, so that always comes from the config.
+
 The default `MultiSendCallOnly` is the canonical deployment for the configured
 `safe_version`, which is correct on the great majority of chains. It is **not**
 universal: zkSync-family chains (zkSync Era, Abstract, …) deploy Safe contracts at

@@ -230,9 +230,29 @@ library SafeTxLib {
         return vm.keyExistsJson(json, ".chainId") ? vm.parseJsonUint(json, ".chainId") : 0;
     }
 
+    /// @notice The Safe a batch says it was built for, or address(0) if it doesn't
+    ///         say. The Transaction Builder schema's slot for this is
+    ///         `meta.createdFromSafeAddress`; producers that fill it in make the
+    ///         file self-binding, and the configured Safe becomes a cross-check.
+    function readSafeAddress(string memory json) internal view returns (address) {
+        if (vm.keyExistsJson(json, ".safe")) return vm.parseJsonAddress(json, ".safe");
+        if (vm.keyExistsJson(json, ".meta.createdFromSafeAddress")) {
+            return vm.parseJsonAddress(json, ".meta.createdFromSafeAddress");
+        }
+        return address(0);
+    }
+
     /// @notice Read any supported shape and fold it into the SafeTx to be signed.
     function readAny(string memory json, Binding memory b) internal view returns (SafeTx memory) {
         if (vm.keyExistsJson(json, ".transactions[0].to") || vm.keyExistsJson(json, "[0].to")) {
+            address declared = readSafeAddress(json);
+            // Disagreement between the file and the config is a tampering signal,
+            // not a preference to be resolved silently.
+            require(
+                declared == address(0) || b.safe == address(0) || declared == b.safe,
+                "SafeTxLib: safe address mismatch between JSON and config"
+            );
+            if (b.safe == address(0)) b.safe = declared;
             return toSafeTx(readBatch(json), b, readChainId(json));
         }
         return readCanonical(json);

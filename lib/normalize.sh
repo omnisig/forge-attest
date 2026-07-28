@@ -161,7 +161,12 @@ case "$FORMAT" in safe-tx|tx-builder|tx-array) ;; *) die "unknown --format: $FOR
 case "$BATCH_MODE" in auto|multisend|single) ;; *) die "unknown --batch-mode: $BATCH_MODE" ;; esac
 
 # --- gather the Safe-level binding (identical for every format) ---------------
-safe=$(reconcile "safe address" "$(jget '.safe')" "$SAFE")
+# A Transaction Builder file can name the Safe it was built for; the schema slot
+# is `meta.createdFromSafeAddress`. When a producer fills it in, the file binds
+# itself and --safe becomes a cross-check rather than a required input.
+json_safe=$(jget '.safe')
+[[ -n "$json_safe" ]] || json_safe=$(jget '.meta.createdFromSafeAddress')
+safe=$(reconcile "safe address" "$json_safe" "$SAFE")
 nonce=$(reconcile "nonce" "$(jget '.nonce')" "$NONCE")
 chain_id=$(reconcile "chainId" "$(jget '.chainId')" "$CHAIN_ID")
 safe_version=$(reconcile "safeVersion" "$(jget '.safeVersion')" "$SAFE_VERSION")

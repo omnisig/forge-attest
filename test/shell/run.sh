@@ -118,6 +118,23 @@ assert_eq "Safe 1.4.x selects the 1.4.1 MultiSendCallOnly" \
 assert_eq "multiSend payload length is 6 * 249 bytes" \
   "$(jq -r .data "$canon_frax" | cut -c75-138 | sed 's/^0*//')" "5d6"
 
+group "normalize.sh: a batch that binds itself"
+
+# The Transaction Builder schema has a slot for the Safe a batch was built for.
+# When a producer fills it in, --safe stops being a required input.
+assert_eq "the Safe is taken from meta.createdFromSafeAddress" \
+  "$(bash "$NORMALIZE" --input "$FIX/tx-builder-self-binding.json" --nonce 42 | jq -r .safe)" \
+  "${SAFE,,}"
+assert_eq "a config Safe that agrees is accepted" \
+  "$(normalize tx-builder-self-binding.json | jq -r .safe)" "${SAFE,,}"
+assert_contains "a config Safe that contradicts the file is rejected" \
+  "$(bash "$NORMALIZE" --input "$FIX/tx-builder-self-binding.json" --nonce 42 \
+       --safe 0x000000000000000000000000000000000000b0b0 2>&1 >/dev/null)" \
+  "safe address mismatch"
+assert_contains "a file declaring no Safe still needs one" \
+  "$(bash "$NORMALIZE" --input "$FIX/tx-builder-frax-optimism.json" --nonce 42 2>&1 >/dev/null)" \
+  "no Safe address"
+
 group "normalize.sh: guard rails"
 
 assert_contains "rejects a contractMethod entry with no encoded data" \
@@ -197,6 +214,7 @@ cross_check "single-transaction batch"        tx-builder-single.json
 cross_check "single-transaction batch, forced multiSend" \
                                               tx-builder-single.json --batch-mode multisend
 cross_check "bare transaction array"          tx-array.json --chain-id 1
+cross_check "batch declaring its own Safe"    tx-builder-self-binding.json
 cross_check "Safe 1.4.1 MultiSendCallOnly"    tx-builder-frax-optimism.json --safe-version 1.4.1
 cross_check "explicit MultiSend, inner delegatecall" \
                                               tx-builder-delegatecall.json --multisend 0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761
