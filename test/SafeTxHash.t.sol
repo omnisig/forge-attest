@@ -248,9 +248,10 @@ contract SafeTxHashTest {
         require(SafeTxLib.defaultMultiSend("1.3.0") == SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0, "1.3.0");
         require(SafeTxLib.defaultMultiSend("1.3.1") == SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0, "1.3.1");
         require(SafeTxLib.defaultMultiSend("1.4.1") == SafeTxLib.MULTI_SEND_CALL_ONLY_1_4_1, "1.4.1");
+        require(SafeTxLib.defaultMultiSend("1.5.0") == SafeTxLib.MULTI_SEND_CALL_ONLY_1_5_0, "1.5.0");
 
         // Unknown versions must be refused, not guessed at.
-        string[3] memory unknown = ["1.5.0", "2.0.0", "1.9.9"];
+        string[3] memory unknown = ["1.6.0", "2.0.0", "1.9.9"];
         for (uint256 i = 0; i < unknown.length; i++) {
             (bool ok,) = address(this).call(abi.encodeCall(this.defaultMultiSendExternal, (unknown[i])));
             require(!ok, string.concat("should refuse ", unknown[i]));
@@ -261,7 +262,7 @@ contract SafeTxHashTest {
     /// address rather than have one invented for them.
     function test_UnknownVersionWorksWithExplicitMultiSend() external view {
         SafeTxLib.Binding memory b = _binding();
-        b.safeVersion = "1.5.0";
+        b.safeVersion = "1.9.9";
         b.multiSend = SafeTxLib.MULTI_SEND_CALL_ONLY_1_4_1;
 
         require(SafeTxLib.readAny(_read("tx-builder-frax-optimism.json"), b).to == SafeTxLib.MULTI_SEND_CALL_ONLY_1_4_1, "explicit");

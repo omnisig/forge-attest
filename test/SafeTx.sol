@@ -43,6 +43,7 @@ library SafeTxLib {
     ///      allows them.
     address internal constant MULTI_SEND_CALL_ONLY_1_3_0 = 0x40A2aCCbd92BCA938b02010E17A5b8929b49130D;
     address internal constant MULTI_SEND_CALL_ONLY_1_4_1 = 0x9641d764fc13c8B624c04430C7356C1C7C8102e2;
+    address internal constant MULTI_SEND_CALL_ONLY_1_5_0 = 0xA83c336B20401Af773B6219BA5027174338D1836;
 
     /// @notice The full EIP-712 SafeTx field set — forge-attest's canonical form.
     struct SafeTx {
@@ -309,6 +310,7 @@ library SafeTxLib {
         (uint256 major, uint256 minor) = _majorMinor(version);
         if (major == 1 && minor == 3) return MULTI_SEND_CALL_ONLY_1_3_0;
         if (major == 1 && minor == 4) return MULTI_SEND_CALL_ONLY_1_4_1;
+        if (major == 1 && minor == 5) return MULTI_SEND_CALL_ONLY_1_5_0;
         revert("SafeTxLib: no known MultiSendCallOnly for this Safe version, set multisend_address");
     }
 

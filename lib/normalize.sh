@@ -66,6 +66,7 @@ PRINT_DIGEST=0; SUMMARY=0
 # execute Transaction Builder batches.
 MULTISEND_CALL_ONLY_130="0x40a2accbd92bca938b02010e17a5b8929b49130d"
 MULTISEND_CALL_ONLY_141="0x9641d764fc13c8b624c04430c7356c1c7c8102e2"
+MULTISEND_CALL_ONLY_150="0xa83c336b20401af773b6219ba5027174338d1836"
 
 die() { printf 'normalize.sh: %s\n' "$*" >&2; exit 1; }
 
@@ -249,6 +250,7 @@ else
       case "$safe_version" in
         1.3|1.3.*) MULTISEND="$MULTISEND_CALL_ONLY_130" ;;
         1.4|1.4.*) MULTISEND="$MULTISEND_CALL_ONLY_141" ;;
+        1.5|1.5.*) MULTISEND="$MULTISEND_CALL_ONLY_150" ;;
         *) die "no known MultiSendCallOnly for Safe $safe_version; pass --multisend explicitly" ;;
       esac
     fi

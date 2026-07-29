@@ -32,6 +32,7 @@ batch_mode = "auto"
 #   - the batch contains inner DELEGATECALLs, which MultiSendCallOnly rejects
 #     (use the plain MultiSend, 0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761 on 1.3.0)
 #   - the target chain deploys Safe elsewhere (zkSync Era, Abstract, …)
+# Known defaults: 1.3.x, 1.4.x, 1.5.x. Any other version must name the address.
 multisend_address = ""
 safe_version      = "1.3.0"
 chain_id          = ""      # only needed when the JSON carries no chainId

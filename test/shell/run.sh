@@ -114,11 +114,14 @@ assert_eq "Safe 1.4.x selects the 1.4.1 MultiSendCallOnly" \
 # The version -> MultiSend mapping must cover exactly the versions test/SafeTx.sol
 # covers. A version one side maps and the other doesn't means the two derivations
 # pick different `to` addresses and silently disagree.
+assert_eq "Safe 1.5.x selects the 1.5.0 MultiSendCallOnly" \
+  "$(normalize tx-builder-frax-optimism.json --safe-version 1.5.0 | jq -r .to)" \
+  "0xa83c336b20401af773b6219ba5027174338d1836"
 assert_contains "an unknown Safe version is refused, not guessed at" \
-  "$(normalize_err tx-builder-frax-optimism.json --safe-version 1.5.0)" \
-  "no known MultiSendCallOnly for Safe 1.5.0"
+  "$(normalize_err tx-builder-frax-optimism.json --safe-version 1.9.9)" \
+  "no known MultiSendCallOnly for Safe 1.9.9"
 assert_eq "…but works once the address is named" \
-  "$(normalize tx-builder-frax-optimism.json --safe-version 1.5.0 \
+  "$(normalize tx-builder-frax-optimism.json --safe-version 1.9.9 \
        --multisend 0x9641d764fc13c8B624c04430C7356C1C7C8102e2 | jq -r .to)" \
   "0x9641d764fc13c8b624c04430c7356c1c7c8102e2"
 
