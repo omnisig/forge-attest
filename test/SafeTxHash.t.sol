@@ -435,6 +435,39 @@ contract SafeTxHashTest {
         require(SafeTxLib.toSafeTx(inner, b, 1).operation == 1, "override rejected");
     }
 
+    /// Every MultiSendCallOnly deployment rejects inner DELEGATECALLs, not just the
+    /// 1.3.0 canonical one. Missing an address from that list silently re-allows a
+    /// batch that could never execute.
+    function test_RejectsInnerDelegateCallUnderEveryCallOnlyDeployment() external {
+        SafeTxLib.InnerTx[] memory inner = SafeTxLib.readBatch(_read("tx-builder-delegatecall.json"));
+
+        address[6] memory callOnly = [
+            SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0,
+            SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0_EIP155,
+            SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0_ZKSYNC,
+            SafeTxLib.MULTI_SEND_CALL_ONLY_1_4_1,
+            SafeTxLib.MULTI_SEND_CALL_ONLY_1_4_1_ZKSYNC,
+            SafeTxLib.MULTI_SEND_CALL_ONLY_1_5_0
+        ];
+
+        for (uint256 i = 0; i < callOnly.length; i++) {
+            SafeTxLib.Binding memory b = _binding();
+            b.multiSend = callOnly[i];
+            (bool ok,) = address(this).call(abi.encodeCall(this.toSafeTxExternal, (inner, b, 1)));
+            require(!ok, string.concat("accepted a delegatecall under ", vm.toString(callOnly[i])));
+        }
+    }
+
+    /// The 1.5.0 default in particular — the version added alongside this guard.
+    function test_RejectsInnerDelegateCallUnderThe150Default() external {
+        SafeTxLib.Binding memory b = _binding();
+        b.safeVersion = "1.5.0";
+        (bool ok, bytes memory err) =
+            address(this).call(abi.encodeCall(this.readAnyExternal, (_read("tx-builder-delegatecall.json"), b)));
+        require(!ok, "1.5.0 default accepted a delegatecall");
+        require(_contains(err, "rejected by MultiSendCallOnly"), "wrong revert");
+    }
+
     function test_RejectsLegacySafeVersion() external {
         SafeTxLib.SafeTx memory t = SafeTxLib.readCanonical(_read("safe-tx-single.json"));
         t.safeVersion = "1.2.0";

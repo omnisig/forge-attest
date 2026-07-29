@@ -174,6 +174,18 @@ assert_contains "rejects a contractMethod entry with no encoded data" \
   "$(normalize_err tx-builder-contract-method.json)" "contractMethod but no encoded 'data'"
 assert_contains "rejects an inner delegatecall under MultiSendCallOnly" \
   "$(normalize_err tx-builder-delegatecall.json)" "MultiSendCallOnly rejects"
+assert_contains "rejects an inner delegatecall under the 1.5.0 CallOnly default" \
+  "$(normalize_err tx-builder-delegatecall.json --safe-version 1.5.0)" "MultiSendCallOnly rejects"
+assert_contains "rejects an inner delegatecall under a chain-specific CallOnly" \
+  "$(normalize_err tx-builder-delegatecall.json --multisend 0xf220D3b4DFb23C4ade8C88E526C1353AbAcbC38F)" \
+  "MultiSendCallOnly rejects"
+# A missing exceptions table means the divergent-chain guard is not running. That
+# must be loud, not a silent fallback to guessing the canonical address.
+assert_contains "a missing exceptions table is fatal, not skipped" \
+  "$(cp "$NORMALIZE" "$TMP/detached.sh"; bash "$TMP/detached.sh" --input "$FIX/tx-builder-frax-optimism.json" \
+       --safe "$SAFE" --nonce 42 2>&1 >/dev/null)" \
+  "cannot check whether chain 10 uses the canonical MultiSendCallOnly"
+
 assert_contains "accepts an inner delegatecall with an explicit MultiSend" \
   "$(normalize tx-builder-delegatecall.json --multisend 0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761 | jq -r .to)" \
   "0xa238cbeb142c10ef7ad8442c6d1f9e89e07e7761"
