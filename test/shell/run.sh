@@ -111,6 +111,24 @@ assert_eq "Safe 1.4.x selects the 1.4.1 MultiSendCallOnly" \
   "$(normalize tx-builder-frax-optimism.json --safe-version 1.4.1 | jq -r .to)" \
   "0x9641d764fc13c8b624c04430c7356c1c7c8102e2"
 
+# The version -> MultiSend mapping must cover exactly the versions test/SafeTx.sol
+# covers. A version one side maps and the other doesn't means the two derivations
+# pick different `to` addresses and silently disagree.
+assert_contains "an unknown Safe version is refused, not guessed at" \
+  "$(normalize_err tx-builder-frax-optimism.json --safe-version 1.5.0)" \
+  "no known MultiSendCallOnly for Safe 1.5.0"
+assert_eq "…but works once the address is named" \
+  "$(normalize tx-builder-frax-optimism.json --safe-version 1.5.0 \
+       --multisend 0x9641d764fc13c8B624c04430C7356C1C7C8102e2 | jq -r .to)" \
+  "0x9641d764fc13c8b624c04430c7356c1c7c8102e2"
+
+# Gas/refund fields are hash inputs that no batch format carries, so they come
+# from config — and must reach both derivations, not just this one.
+assert_eq "gas fields land in the canonical form" \
+  "$(normalize tx-builder-frax-optimism.json --gas-price 1000 --safe-tx-gas 50000 \
+       | jq -r '[.gasPrice, .safeTxGas] | join(" ")')" \
+  "1000 50000"
+
 # The packed payload commits to each entry's length, so the Frax batch encodes to
 # 6 * (1 + 20 + 32 + 32 + 164) = 1494 bytes. In the `multiSend(bytes)` calldata
 # that length sits in the second word: "0x" + selector(8) + offset(64), so chars
@@ -189,17 +207,22 @@ cross_check() { # <label> <fixture> [normalize args...]
   cp "$FIX/$fixture" "$ROOT/out/producer-tx.json"
   rm -f "$ROOT/out/solidity-safe-tx-hash.txt"
 
+  # Mirror the normalize flags into the env attest.sh sets, so the Solidity side
+  # is given exactly the same binding and any divergence is a real one.
   local force=""; [[ " $* " == *" --batch-mode multisend "* ]] && force=1
   local version=""; [[ " $* " == *" --safe-version "* ]] && version="1.4.1"
   local chain=""; [[ "$fixture" == "tx-array.json" ]] && chain="1"
   local multisend=""
   [[ " $* " == *" --multisend "* ]] && multisend="0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761"
+  local gas_price=""; [[ " $* " == *" --gas-price "* ]] && gas_price="1000"
+  local safe_tx_gas=""; [[ " $* " == *" --safe-tx-gas "* ]] && safe_tx_gas="50000"
 
   if ! ATTEST_JSON="out/producer-tx.json" \
        ATTEST_EXPECTED_SAFE_TX_HASH="$cast_hash" \
        ATTEST_SAFE="$SAFE" ATTEST_NONCE="$NONCE" ATTEST_CHAIN_ID="$chain" \
        ATTEST_SAFE_VERSION="$version" ATTEST_MULTISEND="$multisend" \
        ATTEST_FORCE_MULTISEND="$force" \
+       ATTEST_GAS_PRICE="$gas_price" ATTEST_SAFE_TX_GAS="$safe_tx_gas" \
        forge test --root "$ROOT" --match-contract AttestTest -q >"$TMP/forge.log" 2>&1; then
     fail "$label"$'\n'"$(sed 's/^/      /' "$TMP/forge.log")"
     return
@@ -215,6 +238,7 @@ cross_check "single-transaction batch, forced multiSend" \
                                               tx-builder-single.json --batch-mode multisend
 cross_check "bare transaction array"          tx-array.json --chain-id 1
 cross_check "batch declaring its own Safe"    tx-builder-self-binding.json
+cross_check "non-zero gas fields from config" tx-builder-frax-optimism.json --gas-price 1000 --safe-tx-gas 50000
 cross_check "Safe 1.4.1 MultiSendCallOnly"    tx-builder-frax-optimism.json --safe-version 1.4.1
 cross_check "explicit MultiSend, inner delegatecall" \
                                               tx-builder-delegatecall.json --multisend 0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761

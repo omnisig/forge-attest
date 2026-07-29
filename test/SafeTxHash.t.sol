@@ -240,6 +240,72 @@ contract SafeTxHashTest {
         _assertEq(t.hash(), 0x1e205bd4492f165a9784185d6f89f15bfdad13043af1da9721e8e694908ee1dc, "forced multisend");
     }
 
+    /// The version -> MultiSend mapping must cover exactly the versions
+    /// `lib/normalize.sh` covers. If one side maps a version the other doesn't,
+    /// the two derivations pick different `to` addresses and silently disagree —
+    /// which is the one failure mode this whole design exists to prevent.
+    function test_DefaultMultiSendMapsOnlyKnownVersions() external {
+        require(SafeTxLib.defaultMultiSend("1.3.0") == SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0, "1.3.0");
+        require(SafeTxLib.defaultMultiSend("1.3.1") == SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0, "1.3.1");
+        require(SafeTxLib.defaultMultiSend("1.4.1") == SafeTxLib.MULTI_SEND_CALL_ONLY_1_4_1, "1.4.1");
+
+        // Unknown versions must be refused, not guessed at.
+        string[3] memory unknown = ["1.5.0", "2.0.0", "1.9.9"];
+        for (uint256 i = 0; i < unknown.length; i++) {
+            (bool ok,) = address(this).call(abi.encodeCall(this.defaultMultiSendExternal, (unknown[i])));
+            require(!ok, string.concat("should refuse ", unknown[i]));
+        }
+    }
+
+    /// An unknown version is still attestable — the caller just has to name the
+    /// address rather than have one invented for them.
+    function test_UnknownVersionWorksWithExplicitMultiSend() external view {
+        SafeTxLib.Binding memory b = _binding();
+        b.safeVersion = "1.5.0";
+        b.multiSend = SafeTxLib.MULTI_SEND_CALL_ONLY_1_4_1;
+
+        require(SafeTxLib.readAny(_read("tx-builder-frax-optimism.json"), b).to == SafeTxLib.MULTI_SEND_CALL_ONLY_1_4_1, "explicit");
+    }
+
+    /// Gas/refund fields are hash inputs that no batch format carries. If the
+    /// binding drops them, a non-zero config diverges from the bash derivation.
+    function test_GasFieldsReachTheHash() external view {
+        string memory json = _read("tx-builder-frax-optimism.json");
+        bytes32 allZero = SafeTxLib.readAny(json, _binding()).hash();
+
+        SafeTxLib.Binding memory b = _binding();
+        b.gasPrice = 1000;
+        b.safeTxGas = 50000;
+
+        SafeTxLib.SafeTx memory t = SafeTxLib.readAny(json, b);
+        require(t.gasPrice == 1000 && t.safeTxGas == 50000, "gas fields dropped");
+        require(t.hash() != allZero, "gas fields not in the hash");
+
+        // Matches what lib/derive.sh computes for the same canonical SafeTx.
+        _assertEq(t.hash(), 0x99c89e49492f5d8c82122f2720c9d5b6c34939b6ce24480b471c617b35a396f4, "gas-bearing hash");
+
+        SafeTxLib.Binding memory refunds = _binding();
+        refunds.gasToken = 0x000000000000000000000000000000000000bEEF;
+        refunds.refundReceiver = 0x000000000000000000000000000000000000cafE;
+        require(SafeTxLib.readAny(json, refunds).hash() != allZero, "refund fields not in the hash");
+    }
+
+    /// `data` that is present but not valid hex is a producer bug. Treating it as
+    /// empty calldata would attest a transaction nobody wrote.
+    function test_RejectsMalformedHexData() external {
+        (bool ok, bytes memory err) =
+            address(this).call(abi.encodeCall(this.readBatchExternal, (_read("tx-builder-bad-hex.json"))));
+        require(!ok, "malformed hex was accepted");
+        require(!_contains(err, "should never happen"), "sanity");
+    }
+
+    /// ...while an explicit null still means "no calldata", as the Safe UI emits
+    /// for a plain value transfer.
+    function test_NullDataIsStillEmptyCalldata() external view {
+        SafeTxLib.InnerTx[] memory inner = SafeTxLib.readBatch(_read("tx-builder-single.json"));
+        require(inner[0].data.length == 0, "null should be empty");
+    }
+
     /// Safe 1.4.x batches go through a different MultiSendCallOnly deployment, so
     /// the same batch on the same Safe signs as a different transaction.
     function test_SafeVersionSelectsMultiSendDeployment() external view {
@@ -378,6 +444,10 @@ contract SafeTxHashTest {
     function readAnyExternal(string calldata json, SafeTxLib.Binding calldata b) external view returns (bytes32) {
         SafeTxLib.Binding memory binding = b;
         return SafeTxLib.readAny(json, binding).hash();
+    }
+
+    function defaultMultiSendExternal(string calldata version) external pure returns (address) {
+        return SafeTxLib.defaultMultiSend(version);
     }
 
     // ----------------------------------------------------------------- utilities
