@@ -48,6 +48,10 @@ library SafeTxLib {
 
     /// @dev Chains whose MultiSendCallOnly is not the canonical address, generated
     ///      from safe-global/safe-deployments. Shared with lib/normalize.sh.
+    address internal constant MULTI_SEND_CALL_ONLY_1_3_0_EIP155 = 0xA1dabEF33b3B82c7814B6D82A79e50F4AC44102B;
+    address internal constant MULTI_SEND_CALL_ONLY_1_3_0_ZKSYNC = 0xf220D3b4DFb23C4ade8C88E526C1353AbAcbC38F;
+    address internal constant MULTI_SEND_CALL_ONLY_1_4_1_ZKSYNC = 0x0408EF011960d02349d50286D20531229BCef773;
+
     string internal constant EXCEPTIONS_PATH = "lib/multisend-exceptions.json";
 
     /// @notice The full EIP-712 SafeTx field set — forge-attest's canonical form.
@@ -176,7 +180,7 @@ library SafeTxLib {
             multiSend = defaultMultiSend(t.safeVersion, t.chainId);
         }
 
-        bool callOnly = multiSend == MULTI_SEND_CALL_ONLY_1_3_0 || multiSend == MULTI_SEND_CALL_ONLY_1_4_1;
+        bool callOnly = _isCallOnly(multiSend);
         for (uint256 i = 0; i < txs.length; i++) {
             require(txs[i].operation <= 1, "SafeTxLib: inner operation must be 0 or 1");
             require(
@@ -302,6 +306,17 @@ library SafeTxLib {
         (uint256 major, uint256 minor) = _majorMinor(version);
         if (major > 1) return true;
         return major == 1 && minor >= 3;
+    }
+
+    /// @dev Every MultiSendCallOnly deployment we know of, canonical and
+    ///      chain-specific. These reject inner DELEGATECALLs, so a batch containing
+    ///      one could never execute through them. Kept as a single list because
+    ///      missing an entry here silently re-allows the very thing the guard
+    ///      exists to catch.
+    function _isCallOnly(address multiSend) private pure returns (bool) {
+        return multiSend == MULTI_SEND_CALL_ONLY_1_3_0 || multiSend == MULTI_SEND_CALL_ONLY_1_3_0_ZKSYNC
+            || multiSend == MULTI_SEND_CALL_ONLY_1_3_0_EIP155 || multiSend == MULTI_SEND_CALL_ONLY_1_4_1
+            || multiSend == MULTI_SEND_CALL_ONLY_1_4_1_ZKSYNC || multiSend == MULTI_SEND_CALL_ONLY_1_5_0;
     }
 
     /// @notice The canonical MultiSendCallOnly for a Safe version.

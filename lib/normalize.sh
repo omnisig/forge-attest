@@ -69,6 +69,18 @@ PRINT_DIGEST=0; SUMMARY=0
 MULTISEND_CALL_ONLY_130="0x40a2accbd92bca938b02010e17a5b8929b49130d"
 MULTISEND_CALL_ONLY_141="0x9641d764fc13c8b624c04430c7356c1c7c8102e2"
 MULTISEND_CALL_ONLY_150="0xa83c336b20401af773b6219ba5027174338d1836"
+# Chain-specific CallOnly deployments. Listed so the delegatecall guard below
+# recognises them: missing one silently re-allows what the guard exists to catch.
+MULTISEND_CALL_ONLY_130_EIP155="0xa1dabef33b3b82c7814b6d82a79e50f4ac44102b"
+MULTISEND_CALL_ONLY_130_ZKSYNC="0xf220d3b4dfb23c4ade8c88e526c1353abacbc38f"
+MULTISEND_CALL_ONLY_141_ZKSYNC="0x0408ef011960d02349d50286d20531229bcef773"
+is_call_only() {
+  case "$1" in
+    "$MULTISEND_CALL_ONLY_130"|"$MULTISEND_CALL_ONLY_130_EIP155"|"$MULTISEND_CALL_ONLY_130_ZKSYNC"\
+      |"$MULTISEND_CALL_ONLY_141"|"$MULTISEND_CALL_ONLY_141_ZKSYNC"|"$MULTISEND_CALL_ONLY_150") return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 die() { printf 'normalize.sh: %s\n' "$*" >&2; exit 1; }
 
@@ -260,9 +272,11 @@ else
       # at all, and on the zkSync-family chains a different-bytecode deployment
       # exists that is the one Safe{Wallet} actually uses. Defaulting there would
       # produce a `to` the Safe never calls — a wrong hash that looks authoritative.
+      # No existence gate: a missing table means the guard is not running, which
+      # must be loud rather than quietly skipped. test/SafeTx.sol does the same.
       exceptions="$NORMALIZE_DIR/multisend-exceptions.json"
-      if [[ -f "$exceptions" ]] && \
-         [[ "$(jq -r --arg v "$ms_key" --argjson c "$chain_id" \
+      [[ -f "$exceptions" ]] || die "missing $exceptions — cannot check whether chain $chain_id uses the canonical MultiSendCallOnly"
+      if [[ "$(jq -r --arg v "$ms_key" --argjson c "$chain_id" \
                  '((.[$v] // []) | index($c)) != null' "$exceptions")" == "true" ]]; then
         die "chain $chain_id does not use the canonical MultiSendCallOnly for Safe $safe_version; pass --multisend explicitly (see lib/multisend-exceptions.json)"
       fi
@@ -281,7 +295,7 @@ else
       case "$t_op" in
         0) ;;
         1)
-          if [[ "$multisend" == "$MULTISEND_CALL_ONLY_130" || "$multisend" == "$MULTISEND_CALL_ONLY_141" ]]; then
+          if is_call_only "$multisend"; then
             die "transaction #$i is a DELEGATECALL, which MultiSendCallOnly rejects; pass --multisend <MultiSend address>"
           fi ;;
         *) die "transaction #$i has operation $t_op; expected 0 (CALL) or 1 (DELEGATECALL)" ;;
