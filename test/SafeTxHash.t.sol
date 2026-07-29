@@ -481,6 +481,98 @@ contract SafeTxHashTest {
         require(!ok, "expected revert on empty batch");
     }
 
+    // ------------------------------------------------------------- nested Safes
+
+    address internal constant PARENT = SAFE;
+    address internal constant CHILD = 0x2222AA22bb22CC22dd22ee22fF220022110022FF;
+    bytes32 internal constant PARENT_HASH = 0x6dadc73a833c7960871e229102e841631c21a2c4804ab190432fec57ebacce57;
+
+    /// A Safe that owns another Safe approves on-chain instead of signing. The
+    /// approval is fully determined by its inputs, so it is constructed, not read.
+    function test_ApprovalTxIsFullyDetermined() external pure {
+        SafeTxLib.SafeTx memory t = SafeTxLib.approvalTx(PARENT, PARENT_HASH, CHILD, 7, 1, "1.3.0");
+
+        require(t.safe == CHILD, "signed by the child");
+        require(t.to == PARENT, "sent to the parent");
+        require(t.value == 0 && t.operation == 0, "plain zero-value CALL");
+        require(t.safeTxGas == 0 && t.baseGas == 0 && t.gasPrice == 0, "no gas refunds");
+        require(t.data.length == 36, "selector + one word");
+        require(bytes4(t.data) == SafeTxLib.APPROVE_HASH_SELECTOR, "approveHash selector");
+        require(SafeTxLib.approvedHashIn(_one(t), PARENT) == PARENT_HASH, "commits to the parent hash");
+
+        // Matches lib/derive.sh over the same constructed transaction.
+        _assertEq(t.hash(), 0x73c63c06ac272032873f01cc1a80394bda911d061501699ad598f56d03313105, "approval hash");
+    }
+
+    /// Everything the approval binds must move its hash — otherwise a signer could
+    /// be shown one approval and have another executed.
+    function test_ApprovalHashBindsEveryInput() external pure {
+        bytes32 base = SafeTxLib.approvalTx(PARENT, PARENT_HASH, CHILD, 7, 1, "1.3.0").hash();
+
+        require(SafeTxLib.approvalTx(PARENT, bytes32(uint256(PARENT_HASH) ^ 1), CHILD, 7, 1, "1.3.0").hash() != base, "parent hash");
+        require(SafeTxLib.approvalTx(PARENT, PARENT_HASH, CHILD, 8, 1, "1.3.0").hash() != base, "child nonce");
+        require(SafeTxLib.approvalTx(PARENT, PARENT_HASH, address(0xB0B), 7, 1, "1.3.0").hash() != base, "child safe");
+        require(SafeTxLib.approvalTx(address(0xB0B), PARENT_HASH, CHILD, 7, 1, "1.3.0").hash() != base, "parent safe");
+        require(SafeTxLib.approvalTx(PARENT, PARENT_HASH, CHILD, 7, 8453, "1.3.0").hash() != base, "chainId");
+    }
+
+    function test_ApprovalTxRejectsNonsense() external {
+        (bool a,) = address(this).call(abi.encodeCall(this.approvalTxExternal, (PARENT, PARENT_HASH, PARENT, 7, 1)));
+        require(!a, "a Safe cannot approve on itself");
+        (bool b,) = address(this).call(abi.encodeCall(this.approvalTxExternal, (address(0), PARENT_HASH, CHILD, 7, 1)));
+        require(!b, "no parent Safe");
+        (bool c,) = address(this).call(abi.encodeCall(this.approvalTxExternal, (PARENT, PARENT_HASH, CHILD, 7, 0)));
+        require(!c, "no chainId");
+    }
+
+    /// The check is phrased over a set, so a child that bundles its approval with
+    /// other calls reads the same way as a lone approval.
+    function test_FindsTheApprovalAmongOtherCalls() external pure {
+        SafeTxLib.InnerTx[] memory txs = new SafeTxLib.InnerTx[](3);
+        txs[0] = SafeTxLib.InnerTx({to: address(0xFEED), value: 0, data: hex"deadbeef", operation: 0});
+        txs[1] = SafeTxLib.InnerTx({
+            to: PARENT, value: 0, operation: 0,
+            data: abi.encodeWithSelector(SafeTxLib.APPROVE_HASH_SELECTOR, PARENT_HASH)
+        });
+        txs[2] = SafeTxLib.InnerTx({to: address(0xFEED), value: 1 ether, data: "", operation: 0});
+
+        require(SafeTxLib.approvedHashIn(txs, PARENT) == PARENT_HASH, "not found in a batch");
+    }
+
+    function test_RejectsMissingOrAmbiguousApproval() external {
+        SafeTxLib.InnerTx[] memory none = new SafeTxLib.InnerTx[](1);
+        none[0] = SafeTxLib.InnerTx({to: address(0xFEED), value: 0, data: hex"deadbeef", operation: 0});
+        (bool a, bytes memory errA) = address(this).call(abi.encodeCall(this.approvedHashInExternal, (none, PARENT)));
+        require(!a && _contains(errA, "no approveHash call"), "missing approval accepted");
+
+        // An approveHash aimed at some other Safe is not this parent's approval.
+        SafeTxLib.InnerTx[] memory wrongTarget = new SafeTxLib.InnerTx[](1);
+        wrongTarget[0] = SafeTxLib.InnerTx({
+            to: address(0xB0B), value: 0, operation: 0,
+            data: abi.encodeWithSelector(SafeTxLib.APPROVE_HASH_SELECTOR, PARENT_HASH)
+        });
+        (bool b,) = address(this).call(abi.encodeCall(this.approvedHashInExternal, (wrongTarget, PARENT)));
+        require(!b, "approval aimed elsewhere accepted");
+
+        // Two approvals in one transaction is ambiguous — which did they sign for?
+        SafeTxLib.InnerTx[] memory two = new SafeTxLib.InnerTx[](2);
+        two[0] = SafeTxLib.InnerTx({
+            to: PARENT, value: 0, operation: 0,
+            data: abi.encodeWithSelector(SafeTxLib.APPROVE_HASH_SELECTOR, PARENT_HASH)
+        });
+        two[1] = SafeTxLib.InnerTx({
+            to: PARENT, value: 0, operation: 0,
+            data: abi.encodeWithSelector(SafeTxLib.APPROVE_HASH_SELECTOR, bytes32(0))
+        });
+        (bool c, bytes memory errC) = address(this).call(abi.encodeCall(this.approvedHashInExternal, (two, PARENT)));
+        require(!c && _contains(errC, "more than one approval"), "ambiguous approval accepted");
+    }
+
+    function _one(SafeTxLib.SafeTx memory t) private pure returns (SafeTxLib.InnerTx[] memory out) {
+        out = new SafeTxLib.InnerTx[](1);
+        out[0] = SafeTxLib.InnerTx({to: t.to, value: t.value, data: t.data, operation: t.operation});
+    }
+
     // ------------------------------------------------------- external trampolines
 
     // `require` inside an internal library call can only be caught across a real
@@ -505,6 +597,18 @@ contract SafeTxHashTest {
     function readAnyExternal(string calldata json, SafeTxLib.Binding calldata b) external view returns (bytes32) {
         SafeTxLib.Binding memory binding = b;
         return SafeTxLib.readAny(json, binding).hash();
+    }
+
+    function approvalTxExternal(address parent, bytes32 h, address child, uint256 nonce, uint256 chainId)
+        external
+        pure
+        returns (bytes32)
+    {
+        return SafeTxLib.approvalTx(parent, h, child, nonce, chainId, "1.3.0").hash();
+    }
+
+    function approvedHashInExternal(SafeTxLib.InnerTx[] calldata txs, address parent) external pure returns (bytes32) {
+        return SafeTxLib.approvedHashIn(txs, parent);
     }
 
     function defaultMultiSendExternal(string calldata version, uint256 chainId) external view returns (address) {
