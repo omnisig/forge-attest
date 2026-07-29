@@ -155,6 +155,55 @@ You can run the normaliser on its own to see what a given file folds into:
 - **A config value that contradicts the JSON.** If both carry a `chainId` and they
   disagree, that is a tampering signal — it errors rather than silently picking one.
 
+## Nested Safes
+
+When a Safe is owned by other Safes, a child cannot sign — it approves on-chain by
+calling `parent.approveHash(h)`, where `h` is the parent's transaction hash. That
+approval is a Safe transaction in its own right, and it is the one the child's owners
+actually sign. They never sign the parent transaction.
+
+They also cannot see it. `approveHash` stores a flag against `(owner, hash)` and never
+learns the preimage; at execution the full transaction is supplied again and re-hashed.
+So no on-chain state can tell a signer what `0xd4d9bdcd6dadc73a…` means — the preimage
+exists only in the producer's artifact. That is the gap this closes.
+
+Add to any claim:
+
+```toml
+child_safe    = "0x<the child Safe>"
+child_nonce   = "7"
+child_network = ""     # set to also check what is queued on the child itself
+expected_child_safe_tx_hash = ""
+```
+
+There is no artifact for the approval and no producer script writes one. Given the
+parent Safe, the parent hash, the child Safe and the child's nonce, every field is
+determined, so `forge-attest` constructs it — in bash and in Solidity independently,
+and compares them as it does every other hash:
+
+```
+==> Nested approval (child Safe)
+    child    : 0x2222AA…22FF nonce 7
+    approves : 0x7f9d67d2…c115
+    signs    : 0x6ca5575d…b660
+  ✓ Solidity agrees with cast on the approval
+
+ ATTESTED  …
+     sign 0x6ca5575d…b660 on 0x2222AA…22FF
+    valid only while 0x111CEEee…2177 nonce == 43
+```
+
+That last line is the part to read carefully. The parent hash binds the parent's
+nonce, so if the parent executes anything else first, every stored approval silently
+stops matching and execution fails as `GS025` — "invalid owner" — with nothing in the
+error pointing at the real cause.
+
+**Out of scope.** Whether enough children approved (`approveHash` reverts with `GS030`
+unless the caller is already an owner, so a mis-aimed approval cannot silently count —
+but the tool does not tally against the threshold); nesting more than one level deep;
+EIP-1271 contract signatures, which produce a signature blob rather than a reviewable
+transaction; and several different transactions queued at the same nonce.
+
 ## Pointing it at your own repo
 
 Edit `attest.toml`:
@@ -192,6 +241,8 @@ claim.
 - The batch was re-bound to a different Safe, nonce or chain → different hash.
 - The tx queued in the Safe differs from the script output → live hash mismatch
   (check #5).
+- A nested approval pointing at a different transaction than the one under review —
+  the approval is re-derived from the parent, never read back from it.
 
 **Does not catch (out of scope)**
 - Whether the script's *intent* is correct — `forge-attest` proves provenance, not
@@ -202,6 +253,8 @@ claim.
   check (#5) still handles them via `safe-tx-hashes-util`.
 - Batch entries expressed as `contractMethod` + inputs with no encoded calldata —
   refused rather than guessed at.
+- Whether a nested approval will still be valid when it executes. The parent's nonce
+  can move at any time, and only the live check can notice.
 
 ## Tests
 
@@ -236,6 +289,7 @@ forge-attest/
 ├── attest.batch.example.toml     # a commented claim for a Transaction Builder batch
 ├── lib/
 │   ├── normalize.sh              # any supported JSON -> canonical SafeTx (check #2)
+│   ├── nested.sh                 # constructs a child Safe's approveHash tx
 │   ├── derive.sh                 # cast-based safeTxHash derivation (check #3)
 │   ├── safe_hashes.sh            # vendored safe-tx-hashes-util (check #5)
 │   ├── common.sh                 # logging + tiny TOML reader
