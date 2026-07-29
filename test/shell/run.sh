@@ -117,6 +117,18 @@ assert_eq "Safe 1.4.x selects the 1.4.1 MultiSendCallOnly" \
 assert_eq "Safe 1.5.x selects the 1.5.0 MultiSendCallOnly" \
   "$(normalize tx-builder-frax-optimism.json --safe-version 1.5.0 | jq -r .to)" \
   "0xa83c336b20401af773b6219ba5027174338d1836"
+# The canonical MultiSendCallOnly is not universal; guessing it on a chain that
+# uses a different deployment yields a `to` the Safe never calls.
+assert_contains "zkSync Era refuses the canonical MultiSend default" \
+  "$(normalize_err tx-builder-zksync-era.json)" \
+  "chain 324 does not use the canonical MultiSendCallOnly"
+assert_eq "…but an explicit address is honoured" \
+  "$(normalize tx-builder-zksync-era.json --multisend 0xf220D3b4DFb23C4ade8C88E526C1353AbAcbC38F | jq -r .to)" \
+  "0xf220d3b4dfb23c4ade8c88e526c1353abacbc38f"
+assert_eq "Safe 1.5.0 has no divergent chains" \
+  "$(normalize tx-builder-zksync-era.json --safe-version 1.5.0 | jq -r .to)" \
+  "0xa83c336b20401af773b6219ba5027174338d1836"
+
 assert_contains "an unknown Safe version is refused, not guessed at" \
   "$(normalize_err tx-builder-frax-optimism.json --safe-version 1.9.9)" \
   "no known MultiSendCallOnly for Safe 1.9.9"
