@@ -70,7 +70,7 @@ contract AttestTest {
         address child = _envAddress("ATTEST_CHILD_SAFE");
         if (child != address(0)) {
             SafeTxLib.SafeTx memory approval = SafeTxLib.approvalTx(
-                b.safe, computed, child, _envUint("ATTEST_CHILD_NONCE"), t.chainId, b.safeVersion
+                b.safe, computed, child, _requiredEnvUint("ATTEST_CHILD_NONCE"), t.chainId, b.safeVersion
             );
             vm.writeFile("out/solidity-child-safe-tx-hash.txt", vm.toString(approval.hash()));
         }
@@ -86,6 +86,15 @@ contract AttestTest {
     function _envUint(string memory name) private view returns (uint256) {
         string memory v = vm.envOr(name, string(""));
         return bytes(v).length == 0 ? 0 : vm.parseUint(v);
+    }
+
+    /// @dev 0 is a legitimate nonce, so an absent one cannot be defaulted — the
+    ///      result would be a valid-looking hash for a transaction nobody meant.
+    ///      attest.sh treats it as required too.
+    function _requiredEnvUint(string memory name) private view returns (uint256) {
+        string memory v = vm.envOr(name, string(""));
+        require(bytes(v).length != 0, string.concat(name, " is required when ATTEST_CHILD_SAFE is set"));
+        return vm.parseUint(v);
     }
 
     function _envAddress(string memory name) private view returns (address) {

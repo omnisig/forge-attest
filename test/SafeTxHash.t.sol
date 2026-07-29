@@ -568,6 +568,30 @@ contract SafeTxHashTest {
         require(!c && _contains(errC, "more than one approval"), "ambiguous approval accepted");
     }
 
+    /// An entry with the parent as target and approveHash calldata, but executed as
+    /// a DELEGATECALL or carrying value, is not an approval — it runs the parent's
+    /// code against the child's storage, or moves ether, and approves nothing. It
+    /// reads like an approval to anyone eyeballing `to` and the selector.
+    function test_OnlyAZeroValueCallCountsAsAnApproval() external {
+        bytes memory data = abi.encodeWithSelector(SafeTxLib.APPROVE_HASH_SELECTOR, PARENT_HASH);
+
+        SafeTxLib.InnerTx[] memory delegate = new SafeTxLib.InnerTx[](1);
+        delegate[0] = SafeTxLib.InnerTx({to: PARENT, value: 0, data: data, operation: 1});
+        (bool a,) = address(this).call(abi.encodeCall(this.approvedHashInExternal, (delegate, PARENT)));
+        require(!a, "a DELEGATECALL counted as an approval");
+
+        SafeTxLib.InnerTx[] memory valued = new SafeTxLib.InnerTx[](1);
+        valued[0] = SafeTxLib.InnerTx({to: PARENT, value: 1 ether, data: data, operation: 0});
+        (bool b,) = address(this).call(abi.encodeCall(this.approvedHashInExternal, (valued, PARENT)));
+        require(!b, "a value-bearing call counted as an approval");
+
+        // A real approval alongside a disguised one is still found.
+        SafeTxLib.InnerTx[] memory mixed = new SafeTxLib.InnerTx[](2);
+        mixed[0] = delegate[0];
+        mixed[1] = SafeTxLib.InnerTx({to: PARENT, value: 0, data: data, operation: 0});
+        require(SafeTxLib.approvedHashIn(mixed, PARENT) == PARENT_HASH, "real approval missed");
+    }
+
     function _one(SafeTxLib.SafeTx memory t) private pure returns (SafeTxLib.InnerTx[] memory out) {
         out = new SafeTxLib.InnerTx[](1);
         out[0] = SafeTxLib.InnerTx({to: t.to, value: t.value, data: t.data, operation: t.operation});
