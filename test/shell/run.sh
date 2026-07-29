@@ -304,6 +304,11 @@ assert_eq "the approval hashes to the pinned value" \
 assert_contains "a Safe cannot approve on itself" \
   "$(bash "$NESTED" --parent-safe "$SAFE" --parent-hash "$PARENT_HASH" --child-safe "$SAFE" \
        --child-nonce 7 --chain-id 1 2>&1 >/dev/null)" "the same Safe"
+# Solidity rejects chainId 0, so accepting it here would produce a hash the
+# cross-check could never match.
+assert_contains "chain id 0 is refused, as it is on the Solidity side" \
+  "$(bash "$NESTED" --parent-safe "$SAFE" --parent-hash "$PARENT_HASH" --child-safe "$CHILD" \
+       --child-nonce 7 --chain-id 0 2>&1 >/dev/null)" "must be a positive integer"
 assert_contains "a malformed parent hash is refused" \
   "$(bash "$NESTED" --parent-safe "$SAFE" --parent-hash 0xdead --child-safe "$CHILD" \
        --child-nonce 7 --chain-id 1 2>&1 >/dev/null)" "must be a 32-byte hash"

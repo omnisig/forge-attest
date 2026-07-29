@@ -63,7 +63,10 @@ parent_hash=$(lower "$PARENT_HASH")
 [[ "$child_safe"  =~ ^0x[0-9a-f]{40}$ ]] || die "--child-safe must be a 20-byte address"
 [[ "$parent_hash" =~ ^0x[0-9a-f]{64}$ ]] || die "--parent-hash must be a 32-byte hash"
 [[ "$CHILD_NONCE" =~ ^[0-9]+$ ]]         || die "--child-nonce must be a non-negative integer"
-[[ "$CHAIN_ID"    =~ ^[0-9]+$ ]]         || die "--chain-id must be a non-negative integer"
+# Solidity rejects chainId 0 outright; accepting it here would produce a hash the
+# cross-check could never match, and no chain has id 0 anyway.
+[[ "$CHAIN_ID"    =~ ^[0-9]+$ ]]         || die "--chain-id must be a positive integer"
+(( CHAIN_ID > 0 ))                       || die "--chain-id must be a positive integer"
 
 # A Safe cannot own itself, and `approveHash` would be meaningless if it could.
 [[ "$parent_safe" != "$child_safe" ]] || die "--child-safe and --parent-safe are the same Safe"

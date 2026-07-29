@@ -243,6 +243,12 @@ library SafeTxLib {
         for (uint256 i = 0; i < txs.length; i++) {
             if (txs[i].to != parentSafe || txs[i].data.length != 36) continue;
             if (bytes4(txs[i].data) != APPROVE_HASH_SELECTOR) continue;
+            // An approval is a plain zero-value CALL. An entry carrying the same
+            // target and calldata under DELEGATECALL runs the parent's code against
+            // the child's storage and approves nothing; with a value attached it
+            // also moves ether. Either would read as an approval to anyone
+            // eyeballing `to` and the selector, so neither counts as one here.
+            if (txs[i].operation != 0 || txs[i].value != 0) continue;
             bytes memory d = txs[i].data;
             bytes32 h;
             assembly {
