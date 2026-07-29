@@ -46,12 +46,14 @@ library SafeTxLib {
     address internal constant MULTI_SEND_CALL_ONLY_1_4_1 = 0x9641d764fc13c8B624c04430C7356C1C7C8102e2;
     address internal constant MULTI_SEND_CALL_ONLY_1_5_0 = 0xA83c336B20401Af773B6219BA5027174338D1836;
 
-    /// @dev Chains whose MultiSendCallOnly is not the canonical address, generated
-    ///      from safe-global/safe-deployments. Shared with lib/normalize.sh.
+    /// @dev Chain-specific MultiSendCallOnly deployments from safe-global/safe-deployments.
+    ///      Listed so the inner-DELEGATECALL guard recognizes all known CallOnly variants.
     address internal constant MULTI_SEND_CALL_ONLY_1_3_0_EIP155 = 0xA1dabEF33b3B82c7814B6D82A79e50F4AC44102B;
     address internal constant MULTI_SEND_CALL_ONLY_1_3_0_ZKSYNC = 0xf220D3b4DFb23C4ade8C88E526C1353AbAcbC38F;
     address internal constant MULTI_SEND_CALL_ONLY_1_4_1_ZKSYNC = 0x0408EF011960d02349d50286D20531229BCef773;
 
+    /// @dev Chains whose MultiSendCallOnly is not the canonical address, generated
+    ///      from safe-global/safe-deployments. Shared with lib/normalize.sh.
     string internal constant EXCEPTIONS_PATH = "lib/multisend-exceptions.json";
 
     /// @notice The full EIP-712 SafeTx field set — forge-attest's canonical form.
