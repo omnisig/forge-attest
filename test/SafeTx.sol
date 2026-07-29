@@ -81,6 +81,14 @@ library SafeTxLib {
         uint8 operation;
     }
 
+    /// @dev `approveHash(bytes32)`. A Safe that owns another Safe cannot sign, so
+    ///      it approves on-chain instead. The call stores a flag against
+    ///      (owner, hash) and never learns the preimage — at execution the full
+    ///      transaction is supplied again and re-hashed. Nothing on-chain can tell
+    ///      a signer what they approved, which is why the parent's decoded intent
+    ///      has to travel alongside.
+    bytes4 internal constant APPROVE_HASH_SELECTOR = 0xd4d9bdcd;
+
     /// @notice What a batch cannot tell us and the config must supply.
     /// @dev The gas/refund fields are here because a batch format never carries
     ///      them. They are almost always zero — that is what the Safe UI submits —
@@ -195,6 +203,55 @@ library SafeTxLib {
         t.value = 0;
         t.data = encodeMultiSendCalldata(txs);
         t.operation = 1; // MultiSend is always DELEGATECALLed from the Safe
+    }
+
+    // ------------------------------------------------------------ nested Safes
+
+    /// @notice The transaction a child Safe sends to approve `parentHash` on the
+    ///         parent Safe it owns. Every field is determined by the arguments —
+    ///         there is nothing for a producer script to choose, so this is
+    ///         constructed rather than read from an artifact.
+    function approvalTx(
+        address parentSafe,
+        bytes32 parentHash,
+        address childSafe,
+        uint256 childNonce,
+        uint256 chainId,
+        string memory safeVersion
+    ) internal pure returns (SafeTx memory t) {
+        require(parentSafe != address(0), "SafeTxLib: no parent Safe");
+        require(childSafe != address(0), "SafeTxLib: no child Safe");
+        require(parentSafe != childSafe, "SafeTxLib: child and parent are the same Safe");
+        require(chainId != 0, "SafeTxLib: no chainId");
+
+        t.safe = childSafe;
+        t.chainId = chainId;
+        t.safeVersion = bytes(safeVersion).length == 0 ? "1.3.0" : safeVersion;
+        t.to = parentSafe;
+        t.value = 0;
+        t.data = abi.encodeWithSelector(APPROVE_HASH_SELECTOR, parentHash);
+        t.operation = 0;
+        t.nonce = childNonce;
+    }
+
+    /// @notice The hash an approval commits to, read back out of its calldata.
+    /// @dev Phrased over a set so a child that bundles its approval with other
+    ///      calls can be checked the same way later; a lone approval is the
+    ///      one-entry case.
+    function approvedHashIn(InnerTx[] memory txs, address parentSafe) internal pure returns (bytes32 approved) {
+        bool found;
+        for (uint256 i = 0; i < txs.length; i++) {
+            if (txs[i].to != parentSafe || txs[i].data.length != 36) continue;
+            if (bytes4(txs[i].data) != APPROVE_HASH_SELECTOR) continue;
+            bytes memory d = txs[i].data;
+            bytes32 h;
+            assembly {
+                h := mload(add(d, 36))
+            }
+            require(!found, "SafeTxLib: more than one approval in this transaction");
+            (found, approved) = (true, h);
+        }
+        require(found, "SafeTxLib: no approveHash call targeting the parent Safe");
     }
 
     // ------------------------------------------------------------ JSON reading

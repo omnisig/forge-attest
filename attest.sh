@@ -66,6 +66,12 @@ gas_price=$(toml_get "$CONFIG" gas_price)
 gas_token=$(toml_get "$CONFIG" gas_token)
 refund_receiver=$(toml_get "$CONFIG" refund_receiver)
 
+# Nested Safe: a child Safe that owns this one and must approve on-chain.
+child_safe=$(toml_get "$CONFIG" child_safe)
+child_nonce=$(toml_get "$CONFIG" child_nonce)
+child_network=$(toml_get "$CONFIG" child_network)
+expected_child_hash=$(lc "$(toml_get "$CONFIG" expected_child_safe_tx_hash)")
+
 safe_network=$(toml_get "$CONFIG" safe_network)
 safe_address=$(toml_get "$CONFIG" safe_address)
 safe_nonce=$(toml_get "$CONFIG" safe_nonce)
@@ -197,6 +203,8 @@ if ATTEST_JSON="out/producer-tx.json" \
    ATTEST_GAS_PRICE="$gas_price" \
    ATTEST_GAS_TOKEN="$gas_token" \
    ATTEST_REFUND_RECEIVER="$refund_receiver" \
+   ATTEST_CHILD_SAFE="$child_safe" \
+   ATTEST_CHILD_NONCE="$child_nonce" \
      forge test --root "$SCRIPT_DIR" --match-contract AttestTest -q >"$WORK/forge-test.log" 2>&1; then
   sol_hash=$(lc "$(cat "$SCRIPT_DIR/out/solidity-safe-tx-hash.txt" 2>/dev/null || echo '')")
   printf '    safeTx   : %s\n' "${sol_hash:-<unavailable>}"
@@ -210,7 +218,70 @@ else
   record_fail "Solidity cross-check (forge test) failed"
 fi
 
-# --- 6. live integrity: compare against the Safe Transaction Service ----------
+# --- 6. nested Safe: the approval a child Safe must send ----------------------
+# The parent transaction is never signed by the child's owners — only its hash is
+# approved, via `parent.approveHash(h)`. That approval is a Safe transaction in
+# its own right, and it is the one they actually sign. Every field of it is
+# determined by (parent, h, child, child nonce), so it is constructed here rather
+# than read from an artifact; there is nothing for a producer to choose.
+child_hash=""
+if [[ -n "$child_safe" ]]; then
+  step "Nested approval (child Safe)"
+  [[ -n "$child_nonce" ]] || die "config: child_nonce is required alongside child_safe"
+  [[ -n "$safe_address" ]] || die "config: safe_address is required for a nested claim"
+
+  child_canonical="$WORK/child-safe-tx.json"
+  bash "$SCRIPT_DIR/lib/nested.sh" \
+    --parent-safe "$safe_address" --parent-hash "$cast_hash" \
+    --child-safe "$child_safe" --child-nonce "$child_nonce" \
+    --chain-id "$(jq -r .chainId "$canonical")" \
+    --safe-version "$(jq -r .safeVersion "$canonical")" >"$child_canonical" \
+    || die "could not construct the nested approval"
+
+  eval "$(bash "$SCRIPT_DIR/lib/derive.sh" "$child_canonical")"
+  child_hash=$(lc "$SAFE_TX_HASH")
+
+  printf '    child    : %s nonce %s\n' "$child_safe" "$child_nonce"
+  printf '    approves : %s\n' "$cast_hash"
+  printf '    signs    : %s\n' "$child_hash"
+
+  sol_child=$(lc "$(cat "$SCRIPT_DIR/out/solidity-child-safe-tx-hash.txt" 2>/dev/null || echo '')")
+  if [[ -z "$sol_child" ]]; then
+    record_fail "Solidity did not produce a nested approval hash"
+  elif [[ "$sol_child" != "$child_hash" ]]; then
+    record_fail "Solidity nested hash ($sol_child) != cast nested hash ($child_hash)"
+  else
+    ok "Solidity agrees with cast on the approval"
+  fi
+
+  if [[ -n "$expected_child_hash" && "$child_hash" != "$expected_child_hash" ]]; then
+    record_fail "nested approval hash != pinned expected_child_safe_tx_hash ($expected_child_hash)"
+  fi
+
+  # The child's own queue, if asked for. Catches a different transaction being
+  # queued on the child and presented to its owners as "the approval".
+  if [[ -n "$child_network" ]]; then
+    set +e
+    child_out="$WORK/child_hashes.out"
+    timeout 60 bash "$SCRIPT_DIR/lib/safe_hashes.sh" \
+      --network "$child_network" --address "$child_safe" --nonce "$child_nonce" \
+      >"$child_out" 2>&1
+    child_rc=$?
+    child_live=$(lc "$(sed -E 's/\x1b\[[0-9;]*m//g' "$child_out" \
+      | grep -iA2 'safe transaction hash' | grep -oiE '0x[a-f0-9]{64}' | tail -1)")
+    set -e
+    if [[ "$child_rc" -ne 0 || -z "$child_live" ]]; then
+      msg="child Safe queue unreachable or nothing at nonce $child_nonce"
+      if [[ "$REQUIRE_LIVE" == 1 ]]; then record_fail "$msg"; else warn "$msg — skipping"; fi
+    elif [[ "$child_live" == "$child_hash" ]]; then
+      ok "the transaction queued on the child is this approval"
+    else
+      record_fail "queued on child ($child_live) != constructed approval ($child_hash)"
+    fi
+  fi
+fi
+
+# --- 7. live integrity: compare against the Safe Transaction Service ----------
 step "Live check against Safe Transaction Service"
 if [[ -z "$safe_network" || -z "$safe_address" || -z "$safe_nonce" ]]; then
   warn "safe_network/address/nonce not fully set — skipping live check"
@@ -250,6 +321,15 @@ echo
 if [[ ${#FAILURES[@]} -eq 0 ]]; then
   printf '%s%s ATTESTED %s the submitted Safe tx is exactly the output of %s@%s\n' \
     "$C_BOLD" "$C_GREEN" "$C_RESET" "$producer_script" "${producer_commit:0:12}"
+  if [[ -n "$child_hash" ]]; then
+    printf '    %s sign %s on %s\n' "$C_BOLD" "$child_hash" "$child_safe"
+    # The parent hash binds the parent's nonce, and `approveHash` stores only a
+    # flag. If the parent's nonce moves, every approval silently stops matching
+    # and execution fails with an unhelpful "invalid owner" error — so the
+    # expiry is part of the verdict, not a footnote.
+    printf '    %svalid only while %s nonce == %s%s\n' \
+      "$C_YELLOW" "$safe_address" "$safe_nonce" "$C_RESET"
+  fi
   exit 0
 else
   printf '%s%s NOT ATTESTED %s %d check(s) failed:\n' \

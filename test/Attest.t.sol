@@ -24,6 +24,8 @@ import {Vm, SafeTxLib} from "./SafeTx.sol";
 ///           ATTEST_SAFE_VERSION            Safe version       (optional; "" = 1.3.0)
 ///           ATTEST_MULTISEND               MultiSend override (optional)
 ///           ATTEST_FORCE_MULTISEND         "1" to wrap a single-transaction batch
+///           ATTEST_CHILD_SAFE              child Safe approving on the parent (optional)
+///           ATTEST_CHILD_NONCE             that child's nonce
 contract AttestTest {
     using SafeTxLib for SafeTxLib.SafeTx;
 
@@ -55,10 +57,23 @@ contract AttestTest {
         b.gasToken = _envAddress("ATTEST_GAS_TOKEN");
         b.refundReceiver = _envAddress("ATTEST_REFUND_RECEIVER");
 
-        bytes32 computed = SafeTxLib.readAny(json, b).hash();
+        SafeTxLib.SafeTx memory t = SafeTxLib.readAny(json, b);
+        bytes32 computed = t.hash();
+        if (b.safe == address(0)) b.safe = t.safe;
 
         // Publish the computed hash so the orchestrator can display and compare it.
         vm.writeFile("out/solidity-safe-tx-hash.txt", vm.toString(computed));
+
+        // A nested claim: the child Safe approves `computed` on the parent. The
+        // approval is constructed here independently of the bash side rather than
+        // read back from it, so the two remain a check on each other.
+        address child = _envAddress("ATTEST_CHILD_SAFE");
+        if (child != address(0)) {
+            SafeTxLib.SafeTx memory approval = SafeTxLib.approvalTx(
+                b.safe, computed, child, _envUint("ATTEST_CHILD_NONCE"), t.chainId, b.safeVersion
+            );
+            vm.writeFile("out/solidity-child-safe-tx-hash.txt", vm.toString(approval.hash()));
+        }
 
         require(
             computed == expected,

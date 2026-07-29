@@ -57,3 +57,21 @@ expected_safe_tx_hash     = "0x7f9d67d21eabf50afc3c0ef625d519918b4ca7037730caa75
 safe_network = "ethereum"
 safe_address = "0x111CEEee040739fD91D29C34C33E6B3E112F2177"
 safe_nonce   = "43"
+
+# --- Nested Safe (optional) -------------------------------------------------------
+# When the Safe above is owned by other Safes, a child cannot sign — it approves
+# on-chain by calling `safe_address.approveHash(<the hash derived above>)`. That
+# approval is a Safe transaction in its own right, and it is the one the child's
+# owners actually sign.
+#
+# There is no artifact for it: every field is determined by the parent hash, the
+# child Safe and the child's nonce, so forge-attest constructs it. Set these and
+# the run reports the hash the child's owners should expect to see.
+#
+# Note the expiry: the parent hash binds the parent's nonce, and `approveHash`
+# stores only a flag against (owner, hash). If the parent's nonce moves, every
+# approval silently stops matching.
+child_safe    = ""
+child_nonce   = ""
+child_network = ""   # set to also check what is queued on the child itself
+expected_child_safe_tx_hash = ""

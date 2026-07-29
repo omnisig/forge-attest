@@ -276,6 +276,38 @@ assert_eq "Frax batch hashes to the pinned value" \
   "$(safe_tx_hash "$canon_frax")" \
   "0xa55af81f3e8e946ba3989ba04fe1fa0685a104114c479e05f0367bba8c712680"
 
+# --------------------------------------------------------------- nested Safes
+
+group "nested.sh: the approval a child Safe sends"
+
+NESTED="$ROOT/lib/nested.sh"
+PARENT_HASH="0x6dadc73a833c7960871e229102e841631c21a2c4804ab190432fec57ebacce57"
+CHILD="0x2222AA22bb22CC22dd22ee22fF220022110022FF"
+
+nested() { bash "$NESTED" --parent-safe "$SAFE" --parent-hash "$PARENT_HASH" \
+             --child-safe "$CHILD" --child-nonce 7 --chain-id 1 "$@"; }
+nested >"$TMP/child.json"
+
+assert_eq "the approval is sent to the parent Safe" \
+  "$(jq -r .to "$TMP/child.json")" "${SAFE,,}"
+assert_eq "…and signed by the child" \
+  "$(jq -r .safe "$TMP/child.json")" "${CHILD,,}"
+assert_eq "…as a plain zero-value CALL" \
+  "$(jq -r '[.value, .operation] | join(" ")' "$TMP/child.json")" "0 0"
+assert_eq "…carrying approveHash(parentHash)" \
+  "$(jq -r .data "$TMP/child.json")" "0xd4d9bdcd${PARENT_HASH#0x}"
+# Same value the Solidity side pins, so the two constructions agree.
+assert_eq "the approval hashes to the pinned value" \
+  "$(safe_tx_hash "$TMP/child.json")" \
+  "0x73c63c06ac272032873f01cc1a80394bda911d061501699ad598f56d03313105"
+
+assert_contains "a Safe cannot approve on itself" \
+  "$(bash "$NESTED" --parent-safe "$SAFE" --parent-hash "$PARENT_HASH" --child-safe "$SAFE" \
+       --child-nonce 7 --chain-id 1 2>&1 >/dev/null)" "the same Safe"
+assert_contains "a malformed parent hash is refused" \
+  "$(bash "$NESTED" --parent-safe "$SAFE" --parent-hash 0xdead --child-safe "$CHILD" \
+       --child-nonce 7 --chain-id 1 2>&1 >/dev/null)" "must be a 32-byte hash"
+
 # ------------------------------------------------------------ 3. end-to-end run
 
 group "attest.sh: end-to-end against a batch-emitting producer"
@@ -404,6 +436,41 @@ nonce_out=$(bash "$ROOT/attest.sh" --config "$TMP/e2e-nonce.toml" 2>&1)
 nonce_rc=$?
 if [[ $nonce_rc -ne 0 ]]; then pass "re-binding the batch to another nonce is NOT ATTESTED"
 else fail "a nonce change went undetected"; fi
+
+group "attest.sh: a nested claim"
+
+cat "$TMP/e2e.toml" >"$TMP/e2e-nested.toml"
+cat >>"$TMP/e2e-nested.toml" <<EOF
+child_safe    = "$CHILD"
+child_nonce   = "7"
+child_network = ""
+expected_child_safe_tx_hash = ""
+EOF
+nested_out=$(bash "$ROOT/attest.sh" --config "$TMP/e2e-nested.toml" 2>&1)
+nested_rc=$?
+if [[ $nested_rc -eq 0 ]]; then pass "a nested claim is ATTESTED"
+else fail "a nested claim is ATTESTED"$'\n'"$(sed 's/^/      /' <<<"$nested_out")"; fi
+assert_contains "…reporting the child and its nonce" "$nested_out" "child    : $CHILD nonce 7"
+assert_contains "…the hash it approves" "$nested_out" "approves : $E2E_HASH"
+assert_contains "…and the hash its owners sign" "$nested_out" "signs    : 0x"
+assert_contains "…with Solidity agreeing on the approval" "$nested_out" "Solidity agrees with cast on the approval"
+# The parent hash binds the parent nonce and approveHash stores only a flag, so a
+# stale parent nonce voids every approval silently. Say so in the verdict.
+assert_contains "…and states the expiry condition" "$nested_out" "valid only while"
+
+# The approval is derived, so pinning a wrong one must fail like any other pin.
+sed 's|^expected_child_safe_tx_hash = ""|expected_child_safe_tx_hash = "0x0000000000000000000000000000000000000000000000000000000000000000"|' \
+  "$TMP/e2e-nested.toml" >"$TMP/e2e-nested-bad.toml"
+bad_nested=$(bash "$ROOT/attest.sh" --config "$TMP/e2e-nested-bad.toml" 2>&1)
+if [[ $? -ne 0 ]]; then pass "a wrong expected_child_safe_tx_hash is NOT ATTESTED"
+else fail "a wrong nested pin was accepted"; fi
+assert_contains "…naming the nested pin" "$bad_nested" "expected_child_safe_tx_hash"
+
+# A child bound to a different nonce is a different transaction.
+sed 's|^child_nonce   = "7"|child_nonce   = "8"|' "$TMP/e2e-nested.toml" >"$TMP/e2e-nonce8.toml"
+assert_ne "re-binding the approval to another child nonce changes what is signed" \
+  "$(bash "$ROOT/attest.sh" --config "$TMP/e2e-nested.toml" 2>&1 | grep -oE 'signs    : 0x[a-f0-9]{64}')" \
+  "$(bash "$ROOT/attest.sh" --config "$TMP/e2e-nonce8.toml" 2>&1 | grep -oE 'signs    : 0x[a-f0-9]{64}')"
 
 # ------------------------------------------------------------------- verdict
 
