@@ -56,6 +56,8 @@
 # a mismatch is a tampering signal and is a hard error, never a silent override.
 set -euo pipefail
 
+NORMALIZE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 INPUT=""; FORMAT="auto"
 SAFE=""; NONCE=""; CHAIN_ID=""; SAFE_VERSION=""
 BATCH_MODE="auto"; MULTISEND=""
@@ -248,11 +250,22 @@ else
     # check on each other.
     if [[ -z "$MULTISEND" ]]; then
       case "$safe_version" in
-        1.3|1.3.*) MULTISEND="$MULTISEND_CALL_ONLY_130" ;;
-        1.4|1.4.*) MULTISEND="$MULTISEND_CALL_ONLY_141" ;;
-        1.5|1.5.*) MULTISEND="$MULTISEND_CALL_ONLY_150" ;;
+        1.3|1.3.*) MULTISEND="$MULTISEND_CALL_ONLY_130"; ms_key="1.3.0" ;;
+        1.4|1.4.*) MULTISEND="$MULTISEND_CALL_ONLY_141"; ms_key="1.4.1" ;;
+        1.5|1.5.*) MULTISEND="$MULTISEND_CALL_ONLY_150"; ms_key="1.5.0" ;;
         *) die "no known MultiSendCallOnly for Safe $safe_version; pass --multisend explicitly" ;;
       esac
+
+      # The canonical address is not universal. On some chains it is not deployed
+      # at all, and on the zkSync-family chains a different-bytecode deployment
+      # exists that is the one Safe{Wallet} actually uses. Defaulting there would
+      # produce a `to` the Safe never calls — a wrong hash that looks authoritative.
+      exceptions="$NORMALIZE_DIR/multisend-exceptions.json"
+      if [[ -f "$exceptions" ]] && \
+         [[ "$(jq -r --arg v "$ms_key" --argjson c "$chain_id" \
+                 '((.[$v] // []) | index($c)) != null' "$exceptions")" == "true" ]]; then
+        die "chain $chain_id does not use the canonical MultiSendCallOnly for Safe $safe_version; pass --multisend explicitly (see lib/multisend-exceptions.json)"
+      fi
     fi
     multisend=$(norm_addr "$MULTISEND")
 

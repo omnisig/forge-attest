@@ -12,6 +12,7 @@ interface Vm {
     function parseJsonAddress(string calldata json, string calldata key) external view returns (address);
     function parseJsonUint(string calldata json, string calldata key) external view returns (uint256);
     function parseJsonBytes(string calldata json, string calldata key) external view returns (bytes memory);
+    function parseJsonUintArray(string calldata json, string calldata key) external view returns (uint256[] memory);
     function parseJsonString(string calldata json, string calldata key) external view returns (string memory);
     function parseBytes32(string calldata value) external pure returns (bytes32);
     function parseUint(string calldata value) external pure returns (uint256);
@@ -44,6 +45,10 @@ library SafeTxLib {
     address internal constant MULTI_SEND_CALL_ONLY_1_3_0 = 0x40A2aCCbd92BCA938b02010E17A5b8929b49130D;
     address internal constant MULTI_SEND_CALL_ONLY_1_4_1 = 0x9641d764fc13c8B624c04430C7356C1C7C8102e2;
     address internal constant MULTI_SEND_CALL_ONLY_1_5_0 = 0xA83c336B20401Af773B6219BA5027174338D1836;
+
+    /// @dev Chains whose MultiSendCallOnly is not the canonical address, generated
+    ///      from safe-global/safe-deployments. Shared with lib/normalize.sh.
+    string internal constant EXCEPTIONS_PATH = "lib/multisend-exceptions.json";
 
     /// @notice The full EIP-712 SafeTx field set — forge-attest's canonical form.
     struct SafeTx {
@@ -141,7 +146,7 @@ library SafeTxLib {
     ///         what Safe{Wallet} does when it submits a Transaction Builder batch.
     function toSafeTx(InnerTx[] memory txs, Binding memory b, uint256 jsonChainId)
         internal
-        pure
+        view
         returns (SafeTx memory t)
     {
         require(txs.length > 0, "SafeTxLib: batch contains no transactions");
@@ -168,7 +173,7 @@ library SafeTxLib {
 
         address multiSend = b.multiSend;
         if (multiSend == address(0)) {
-            multiSend = defaultMultiSend(t.safeVersion);
+            multiSend = defaultMultiSend(t.safeVersion, t.chainId);
         }
 
         bool callOnly = multiSend == MULTI_SEND_CALL_ONLY_1_3_0 || multiSend == MULTI_SEND_CALL_ONLY_1_4_1;
@@ -306,12 +311,34 @@ library SafeTxLib {
     ///      make the caller name the address. `lib/normalize.sh` implements exactly
     ///      this mapping; the two must not drift, or the independent derivations
     ///      stop being a check on each other.
-    function defaultMultiSend(string memory version) internal pure returns (address) {
+    function defaultMultiSend(string memory version, uint256 chainId) internal view returns (address) {
         (uint256 major, uint256 minor) = _majorMinor(version);
-        if (major == 1 && minor == 3) return MULTI_SEND_CALL_ONLY_1_3_0;
-        if (major == 1 && minor == 4) return MULTI_SEND_CALL_ONLY_1_4_1;
-        if (major == 1 && minor == 5) return MULTI_SEND_CALL_ONLY_1_5_0;
-        revert("SafeTxLib: no known MultiSendCallOnly for this Safe version, set multisend_address");
+        address multiSend;
+        string memory key;
+        if (major == 1 && minor == 3) {
+            (multiSend, key) = (MULTI_SEND_CALL_ONLY_1_3_0, "1.3.0");
+        } else if (major == 1 && minor == 4) {
+            (multiSend, key) = (MULTI_SEND_CALL_ONLY_1_4_1, "1.4.1");
+        } else if (major == 1 && minor == 5) {
+            (multiSend, key) = (MULTI_SEND_CALL_ONLY_1_5_0, "1.5.0");
+        } else {
+            revert("SafeTxLib: no known MultiSendCallOnly for this Safe version, set multisend_address");
+        }
+
+        // The canonical address is not universal — see lib/multisend-exceptions.json.
+        // Both implementations read that one file so they cannot drift apart. No
+        // try/catch: a missing file or key means the guard is not running, which
+        // must be loud rather than quietly skipped.
+        uint256[] memory chains =
+            vm.parseJsonUintArray(vm.readFile(EXCEPTIONS_PATH), string.concat(".[\"", key, "\"]"));
+        for (uint256 i = 0; i < chains.length; i++) {
+            require(
+                chains[i] != chainId,
+                "SafeTxLib: chain does not use the canonical MultiSendCallOnly, set multisend_address"
+            );
+        }
+
+        return multiSend;
     }
 
     function _majorMinor(string memory version) private pure returns (uint256 major, uint256 minor) {

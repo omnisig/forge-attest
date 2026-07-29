@@ -245,17 +245,44 @@ contract SafeTxHashTest {
     /// the two derivations pick different `to` addresses and silently disagree —
     /// which is the one failure mode this whole design exists to prevent.
     function test_DefaultMultiSendMapsOnlyKnownVersions() external {
-        require(SafeTxLib.defaultMultiSend("1.3.0") == SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0, "1.3.0");
-        require(SafeTxLib.defaultMultiSend("1.3.1") == SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0, "1.3.1");
-        require(SafeTxLib.defaultMultiSend("1.4.1") == SafeTxLib.MULTI_SEND_CALL_ONLY_1_4_1, "1.4.1");
-        require(SafeTxLib.defaultMultiSend("1.5.0") == SafeTxLib.MULTI_SEND_CALL_ONLY_1_5_0, "1.5.0");
+        require(SafeTxLib.defaultMultiSend("1.3.0", 1) == SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0, "1.3.0");
+        require(SafeTxLib.defaultMultiSend("1.3.1", 1) == SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0, "1.3.1");
+        require(SafeTxLib.defaultMultiSend("1.4.1", 1) == SafeTxLib.MULTI_SEND_CALL_ONLY_1_4_1, "1.4.1");
+        require(SafeTxLib.defaultMultiSend("1.5.0", 1) == SafeTxLib.MULTI_SEND_CALL_ONLY_1_5_0, "1.5.0");
 
         // Unknown versions must be refused, not guessed at.
         string[3] memory unknown = ["1.6.0", "2.0.0", "1.9.9"];
         for (uint256 i = 0; i < unknown.length; i++) {
-            (bool ok,) = address(this).call(abi.encodeCall(this.defaultMultiSendExternal, (unknown[i])));
+            (bool ok,) = address(this).call(abi.encodeCall(this.defaultMultiSendExternal, (unknown[i], uint256(1))));
             require(!ok, string.concat("should refuse ", unknown[i]));
         }
+    }
+
+    /// The canonical MultiSendCallOnly is not universal: on some chains it is not
+    /// deployed, and on the zkSync-family chains a different-bytecode deployment is
+    /// the one Safe{Wallet} uses. Defaulting there would produce a `to` the Safe
+    /// never calls — a wrong hash that still looks authoritative.
+    function test_RefusesCanonicalMultiSendOnDivergentChains() external {
+        (bool ok, bytes memory err) = address(this).call(
+            abi.encodeCall(this.readAnyExternal, (_read("tx-builder-zksync-era.json"), _binding()))
+        );
+        require(!ok, "zkSync Era accepted the canonical address");
+        require(_contains(err, "does not use the canonical MultiSendCallOnly"), "wrong revert");
+
+        // Naming the address explicitly is still fine — the guard is on guessing.
+        SafeTxLib.Binding memory b = _binding();
+        b.multiSend = 0xf220D3b4DFb23C4ade8C88E526C1353AbAcbC38F; // zkSync 1.3.0
+        require(SafeTxLib.readAny(_read("tx-builder-zksync-era.json"), b).to == b.multiSend, "explicit rejected");
+    }
+
+    /// Chains that do use the canonical deployment must be unaffected.
+    function test_CanonicalChainsAreUnaffected() external view {
+        require(
+            SafeTxLib.readAny(_read("tx-builder-frax-optimism.json"), _binding()).to
+                == SafeTxLib.MULTI_SEND_CALL_ONLY_1_3_0,
+            "Optimism should still default"
+        );
+        require(SafeTxLib.defaultMultiSend("1.5.0", 324) == SafeTxLib.MULTI_SEND_CALL_ONLY_1_5_0, "1.5.0 has no exceptions");
     }
 
     /// An unknown version is still attestable — the caller just has to name the
@@ -432,7 +459,7 @@ contract SafeTxHashTest {
 
     function toSafeTxExternal(SafeTxLib.InnerTx[] calldata txs, SafeTxLib.Binding calldata b, uint256 chainId)
         external
-        pure
+        view
         returns (bytes32)
     {
         return SafeTxLib.toSafeTx(txs, b, chainId).hash();
@@ -447,8 +474,8 @@ contract SafeTxHashTest {
         return SafeTxLib.readAny(json, binding).hash();
     }
 
-    function defaultMultiSendExternal(string calldata version) external pure returns (address) {
-        return SafeTxLib.defaultMultiSend(version);
+    function defaultMultiSendExternal(string calldata version, uint256 chainId) external view returns (address) {
+        return SafeTxLib.defaultMultiSend(version, chainId);
     }
 
     // ----------------------------------------------------------------- utilities

@@ -111,12 +111,23 @@ the two disagree, that is a tampering signal and the run fails rather than picki
 one. Nothing carries the nonce, so that always comes from the config.
 
 The default `MultiSendCallOnly` is the canonical deployment for the configured
-`safe_version`, which is correct on the great majority of chains. It is **not**
-universal: zkSync-family chains (zkSync Era, Abstract, …) deploy Safe contracts at
-different addresses because of a different bytecode format. If your batch targets one
-of those, set `multisend_address` explicitly — a wrong `to` produces a hash that
-simply won't match the queued transaction, so check #5 catches it, but naming the
-address up front is better than discovering it at signing time.
+`safe_version` — 1.3.x, 1.4.x and 1.5.x are known; any other version must name
+`multisend_address`.
+
+That default is **not** universal across chains. On some chains the canonical
+address isn't deployed at all, and on the zkSync-family chains (zkSync Era, Abstract,
+…) a different-bytecode deployment is the one Safe{Wallet} actually uses. Rather than
+guess, `forge-attest` refuses on those chains and asks for `multisend_address`:
+
+```
+normalize.sh: chain 324 does not use the canonical MultiSendCallOnly for Safe 1.3.0;
+              pass --multisend explicitly (see lib/multisend-exceptions.json)
+```
+
+[`lib/multisend-exceptions.json`](lib/multisend-exceptions.json) is generated from
+[`safe-global/safe-deployments`](https://github.com/safe-global/safe-deployments) and
+read by *both* derivations, so the two cannot drift. Safe 1.5.0 has no divergent
+chains; 1.4.1 has 7; 1.3.0 has 112.
 
 Batches are also where the byte-exact `sha256` stops being usable: `SafeTxHelper`
 stamps `createdAt` with `block.timestamp * 1000`, so the file's bytes change on every
