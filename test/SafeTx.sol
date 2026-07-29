@@ -70,6 +70,10 @@ library SafeTxLib {
     }
 
     /// @notice What a batch cannot tell us and the config must supply.
+    /// @dev The gas/refund fields are here because a batch format never carries
+    ///      them. They are almost always zero — that is what the Safe UI submits —
+    ///      but they are inputs to the hash, so a config that sets them has to
+    ///      reach this side too or the two derivations silently disagree.
     struct Binding {
         address safe;
         uint256 nonce;
@@ -77,6 +81,11 @@ library SafeTxLib {
         string safeVersion; // "" = 1.3.0
         address multiSend; // address(0) = canonical MultiSendCallOnly for safeVersion
         bool forceMultiSend; // wrap even a single-transaction batch
+        uint256 safeTxGas;
+        uint256 baseGas;
+        uint256 gasPrice;
+        address gasToken;
+        address refundReceiver;
     }
 
     // ---------------------------------------------------------------- hashing
@@ -140,6 +149,11 @@ library SafeTxLib {
         t.chainId = b.chainId == 0 ? jsonChainId : b.chainId;
         t.safeVersion = bytes(b.safeVersion).length == 0 ? "1.3.0" : b.safeVersion;
         t.nonce = b.nonce;
+        t.safeTxGas = b.safeTxGas;
+        t.baseGas = b.baseGas;
+        t.gasPrice = b.gasPrice;
+        t.gasToken = b.gasToken;
+        t.refundReceiver = b.refundReceiver;
         require(t.safe != address(0), "SafeTxLib: no Safe address");
         require(t.chainId != 0, "SafeTxLib: no chainId");
 
@@ -153,7 +167,7 @@ library SafeTxLib {
 
         address multiSend = b.multiSend;
         if (multiSend == address(0)) {
-            multiSend = _isV14(t.safeVersion) ? MULTI_SEND_CALL_ONLY_1_4_1 : MULTI_SEND_CALL_ONLY_1_3_0;
+            multiSend = defaultMultiSend(t.safeVersion);
         }
 
         bool callOnly = multiSend == MULTI_SEND_CALL_ONLY_1_3_0 || multiSend == MULTI_SEND_CALL_ONLY_1_4_1;
@@ -261,14 +275,18 @@ library SafeTxLib {
     // ----------------------------------------------------------------- helpers
 
     /// @dev `data` is routinely absent or explicitly `null` for plain value
-    ///      transfers, which `parseJsonBytes` refuses outright.
+    ///      transfers, which `parseJsonBytes` refuses outright. Only that case may
+    ///      become empty calldata: a value that is present but not valid hex — say
+    ///      `"0x1"` — is a producer bug, and silently hashing it as empty would
+    ///      attest a transaction nobody wrote. A JSON null reads back as the
+    ///      literal string "null", which is what separates the two.
     function _optionalBytes(string memory json, string memory key) private view returns (bytes memory) {
         if (!vm.keyExistsJson(json, key)) return "";
-        try Vm(address(vm)).parseJsonBytes(json, key) returns (bytes memory d) {
-            return d;
-        } catch {
-            return "";
-        }
+        try Vm(address(vm)).parseJsonString(json, key) returns (string memory raw) {
+            if (keccak256(bytes(raw)) == keccak256(bytes("null"))) return "";
+        } catch {}
+        // Anything else must parse as hex; let the cheatcode's own error surface.
+        return vm.parseJsonBytes(json, key);
     }
 
     /// @dev True for Safe >= 1.3.0, whose EIP-712 domain binds `chainId`. Older
@@ -280,9 +298,18 @@ library SafeTxLib {
         return major == 1 && minor >= 3;
     }
 
-    function _isV14(string memory version) private pure returns (bool) {
+    /// @notice The canonical MultiSendCallOnly for a Safe version.
+    /// @dev Only versions whose deployment address we actually know are mapped.
+    ///      Guessing for an unknown version would silently produce a `to` the Safe
+    ///      never uses — a wrong hash that looks authoritative. Refuse instead and
+    ///      make the caller name the address. `lib/normalize.sh` implements exactly
+    ///      this mapping; the two must not drift, or the independent derivations
+    ///      stop being a check on each other.
+    function defaultMultiSend(string memory version) internal pure returns (address) {
         (uint256 major, uint256 minor) = _majorMinor(version);
-        return major == 1 && minor >= 4;
+        if (major == 1 && minor == 3) return MULTI_SEND_CALL_ONLY_1_3_0;
+        if (major == 1 && minor == 4) return MULTI_SEND_CALL_ONLY_1_4_1;
+        revert("SafeTxLib: no known MultiSendCallOnly for this Safe version, set multisend_address");
     }
 
     function _majorMinor(string memory version) private pure returns (uint256 major, uint256 minor) {

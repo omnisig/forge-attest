@@ -46,6 +46,14 @@ contract AttestTest {
         b.safeVersion = vm.envOr("ATTEST_SAFE_VERSION", string(""));
         b.multiSend = _envAddress("ATTEST_MULTISEND");
         b.forceMultiSend = keccak256(bytes(vm.envOr("ATTEST_FORCE_MULTISEND", string("")))) == keccak256("1");
+        // Batch formats carry no gas/refund fields, so they come from the same
+        // config the bash side reads. Omitting them here would make a non-zero
+        // config diverge between the two derivations.
+        b.safeTxGas = _envUint("ATTEST_SAFE_TX_GAS");
+        b.baseGas = _envUint("ATTEST_BASE_GAS");
+        b.gasPrice = _envUint("ATTEST_GAS_PRICE");
+        b.gasToken = _envAddress("ATTEST_GAS_TOKEN");
+        b.refundReceiver = _envAddress("ATTEST_REFUND_RECEIVER");
 
         bytes32 computed = SafeTxLib.readAny(json, b).hash();
 

@@ -240,10 +240,16 @@ else
     operation=$(norm_uint "$(printf '%s' "$batch_json" | jq -r '.[0].operation')")
     [[ "$operation" == "0" || "$operation" == "1" ]] || die "operation must be 0 or 1, got $operation"
   else
+    # Only versions whose deployment address we actually know are mapped. Guessing
+    # for an unknown version would silently produce a `to` the Safe never uses — a
+    # wrong hash that looks authoritative. test/SafeTx.sol implements exactly this
+    # mapping; the two must not drift, or the independent derivations stop being a
+    # check on each other.
     if [[ -z "$MULTISEND" ]]; then
       case "$safe_version" in
-        1.4.*) MULTISEND="$MULTISEND_CALL_ONLY_141" ;;
-        *)     MULTISEND="$MULTISEND_CALL_ONLY_130" ;;
+        1.3|1.3.*) MULTISEND="$MULTISEND_CALL_ONLY_130" ;;
+        1.4|1.4.*) MULTISEND="$MULTISEND_CALL_ONLY_141" ;;
+        *) die "no known MultiSendCallOnly for Safe $safe_version; pass --multisend explicitly" ;;
       esac
     fi
     multisend=$(norm_addr "$MULTISEND")

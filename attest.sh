@@ -192,6 +192,11 @@ if ATTEST_JSON="out/producer-tx.json" \
    ATTEST_SAFE_VERSION="$safe_version" \
    ATTEST_MULTISEND="$multisend_address" \
    ATTEST_FORCE_MULTISEND="$([[ "$batch_mode" == "multisend" ]] && echo 1 || echo '')" \
+   ATTEST_SAFE_TX_GAS="$safe_tx_gas" \
+   ATTEST_BASE_GAS="$base_gas" \
+   ATTEST_GAS_PRICE="$gas_price" \
+   ATTEST_GAS_TOKEN="$gas_token" \
+   ATTEST_REFUND_RECEIVER="$refund_receiver" \
      forge test --root "$SCRIPT_DIR" --match-contract AttestTest -q >"$WORK/forge-test.log" 2>&1; then
   sol_hash=$(lc "$(cat "$SCRIPT_DIR/out/solidity-safe-tx-hash.txt" 2>/dev/null || echo '')")
   printf '    safeTx   : %s\n' "${sol_hash:-<unavailable>}"
