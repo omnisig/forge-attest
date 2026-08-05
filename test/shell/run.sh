@@ -477,6 +477,30 @@ assert_ne "re-binding the approval to another child nonce changes what is signed
   "$(bash "$ROOT/attest.sh" --config "$TMP/e2e-nested.toml" 2>&1 | grep -oE 'signs    : 0x[a-f0-9]{64}')" \
   "$(bash "$ROOT/attest.sh" --config "$TMP/e2e-nonce8.toml" 2>&1 | grep -oE 'signs    : 0x[a-f0-9]{64}')"
 
+# --------------------------------------------------- vendored file integrity
+#
+# These files feed the hash derivation, so a silent change to either produces a
+# confidently wrong answer rather than an error. VENDORED.md is the record of
+# what they are meant to be; this asserts the bytes still match it.
+group "Vendored files match VENDORED.md"
+
+check_vendored() { # file
+  local want got
+  # the sha256 recorded under this file's own "## `name`" section
+  want=$(sed -n "/^## .$1./,/^## /p" "$ROOT/lib/VENDORED.md" \
+         | grep -m1 -oE '\*\*sha256:\*\* .[0-9a-f]{64}' \
+         | grep -oE '[0-9a-f]{64}')
+  got=$(sha256sum "$ROOT/lib/$1" | awk '{print $1}')
+  if [[ -z "$want" ]]; then
+    fail "no sha256 recorded in VENDORED.md for $1"
+  else
+    assert_eq "$1 matches its recorded sha256" "$got" "$want"
+  fi
+}
+
+check_vendored safe_hashes.sh
+check_vendored multisend-exceptions.json
+
 # ------------------------------------------------------------------- verdict
 
 echo
