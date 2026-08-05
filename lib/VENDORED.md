@@ -7,6 +7,13 @@
 - **Pinned commit:** `e3be687a24af013d455b99d1fcacc5c252e2f1e8`
 - **sha256:** `15705ee9a702835b070f5a8cb3bb3c494c0ff091a775fc53f2dbe50c3af62759`
 - **Fetched:** 2026-07-27
+- **Licence:** AGPL-3.0-only — [`LICENSE-AGPL-3.0.txt`](LICENSE-AGPL-3.0.txt)
+
+The rest of this repository is MIT. The MIT grant does **not** extend to this
+file: it is redistributed verbatim under AGPL-3.0-only with its author and
+`@license` header intact, and `attest.sh` invokes it as a separate process
+rather than incorporating it. Keep the header and this record intact when
+updating it.
 
 This is the canonical "Don't trust, verify!" Safe transaction hash calculator. We
 vendor it (rather than `curl | bash`) so the exact bytes are pinned and auditable,
