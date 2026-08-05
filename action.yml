@@ -1,0 +1,151 @@
+name: forge-attest
+description: Prove a queued Safe transaction is exactly the output of a pinned Forge script.
+author: xsafe
+
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  config:
+    description: Path to attest.toml, relative to the calling repository's root.
+    required: false
+    default: attest.toml
+  require-live:
+    description: >
+      Fail when the Safe Transaction Service is unreachable or has no transaction
+      queued at the configured nonce. Off by default so a run still attests the
+      script output when the service is down; turn it on to gate a live queue.
+    required: false
+    default: "false"
+  install-foundry:
+    description: Install the Foundry toolchain. Set false if the caller already did.
+    required: false
+    default: "true"
+  foundry-version:
+    description: >
+      Foundry version to install. This is part of the claim: forge re-runs the
+      producer's script, so a moving toolchain can move the output bytes. Pin it
+      alongside the action for a reproducible result.
+    required: false
+    default: stable
+  summary:
+    description: Write the verdict to the workflow job summary.
+    required: false
+    default: "true"
+
+outputs:
+  attested:
+    description: '"true" when every check passed.'
+    value: ${{ steps.attest.outputs.attested }}
+  safe-tx-hash:
+    description: The EIP-712 digest the Safe's owners sign.
+    value: ${{ steps.attest.outputs.safe-tx-hash }}
+  canonical-sha256:
+    description: sha256 of the normalised SafeTx, stable across formatting drift.
+    value: ${{ steps.attest.outputs.canonical-sha256 }}
+  child-safe-tx-hash:
+    description: For a nested claim, the approval hash the child Safe's owners sign.
+    value: ${{ steps.attest.outputs.child-safe-tx-hash }}
+  json:
+    description: The full verdict document, as a JSON string.
+    value: ${{ steps.attest.outputs.json }}
+
+runs:
+  using: composite
+  steps:
+    # No checkout of this repository is needed: `uses:` has already placed it at
+    # `github.action_path`, at the exact ref the caller pinned. That is the whole
+    # reason the action lives here rather than in a wrapper repo — one ref pins
+    # the action, attest.sh, lib/, and the Solidity cross-check together.
+    - name: Install Foundry
+      if: inputs.install-foundry == 'true'
+      uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: ${{ inputs.foundry-version }}
+
+    - name: Attest
+      id: attest
+      shell: bash
+      env:
+        CONFIG: ${{ inputs.config }}
+        REQUIRE_LIVE: ${{ inputs.require-live }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -uo pipefail
+
+        config="$CONFIG"
+        [[ "$config" = /* ]] || config="$GITHUB_WORKSPACE/$config"
+        [[ -f "$config" ]] || { echo "::error::config not found: $CONFIG"; exit 1; }
+
+        args=(--config "$config" --json)
+        [[ "$REQUIRE_LIVE" == "true" ]] && args+=(--require-live)
+
+        # stdout is the verdict document; stderr is the human report, which is
+        # echoed straight through so it streams into the job log.
+        "$ACTION_PATH/attest.sh" "${args[@]}" >/tmp/attest.json 2>/tmp/attest.log
+        rc=$?
+        cat /tmp/attest.log >&2
+
+        # A crash before the verdict leaves no document to read; say so plainly
+        # rather than emitting empty outputs that look like a clean run.
+        if [[ ! -s /tmp/attest.json ]]; then
+          echo "::error::forge-attest exited $rc without producing a verdict"
+          exit "${rc:-1}"
+        fi
+
+        {
+          echo "attested=$(jq -r '.attested'                  /tmp/attest.json)"
+          echo "safe-tx-hash=$(jq -r '.hashes.safe_tx'        /tmp/attest.json)"
+          echo "canonical-sha256=$(jq -r '.hashes.canonical_sha256' /tmp/attest.json)"
+          echo "child-safe-tx-hash=$(jq -r '.nested.safe_tx // ""'  /tmp/attest.json)"
+          echo "json<<FORGE_ATTEST_EOF"
+          cat /tmp/attest.json
+          echo "FORGE_ATTEST_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+        exit "$rc"
+
+    - name: Job summary
+      if: always() && inputs.summary == 'true'
+      shell: bash
+      run: |
+        set -uo pipefail
+        [[ -s /tmp/attest.json ]] || exit 0
+
+        {
+          if [[ "$(jq -r '.attested' /tmp/attest.json)" == "true" ]]; then
+            echo "### ✅ ATTESTED"
+            echo
+            echo "The queued Safe transaction is exactly the output of the pinned script."
+          else
+            echo "### ❌ NOT ATTESTED"
+            echo
+            jq -r '.failures[] | "- \(.)"' /tmp/attest.json
+          fi
+
+          echo
+          jq -r '
+            "| | |",
+            "|---|---|",
+            "| safeTxHash | `\(.hashes.safe_tx)` |",
+            "| canonical sha256 | `\(.hashes.canonical_sha256)` |",
+            "| Safe | `\(.safe.address)` @ nonce \(.safe.nonce) |",
+            "| producer | `\(.producer.script)` @ `\(.producer.commit[0:12])` |"
+          ' /tmp/attest.json
+
+          if [[ "$(jq -r '.nested // ""' /tmp/attest.json)" != "" ]]; then
+            echo
+            jq -r '"Nested: the child Safe `\(.nested.safe)` signs `\(.nested.safe_tx)` at nonce \(.nested.nonce)."' \
+              /tmp/attest.json
+          fi
+
+          echo
+          echo "<details><summary>Full report</summary>"
+          echo
+          echo '```'
+          sed -E 's/\x1b\[[0-9;]*m//g' /tmp/attest.log
+          echo '```'
+          echo
+          echo "</details>"
+        } >> "$GITHUB_STEP_SUMMARY"

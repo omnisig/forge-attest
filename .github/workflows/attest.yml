@@ -38,14 +38,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-
+      # Run through the action rather than calling attest.sh directly, so the
+      # action published from this repo is exercised on every push instead of
+      # only in consumers' pipelines. `uses: ./` is the local checkout.
+      #
+      # NOTE: in CI, producer_repo in attest.toml must be a reachable git URL
+      # (e.g. https://github.com/you/your-ops-repo), not a local file:// path.
       - name: Attest
-        # NOTE: in CI, producer_repo in attest.toml must be a reachable git URL
-        # (e.g. https://github.com/you/your-ops-repo), not a local file:// path.
-        run: ./attest.sh --config attest.toml
+        id: attest
+        uses: ./
+        with:
+          config: attest.toml
+          # Set require-live: true to fail the build when the queued tx drifts
+          # from the script output, instead of skipping an unreachable service.
 
-      # To make the live Safe Transaction Service comparison mandatory (fail the
-      # build if the queued tx drifts from the script output), use instead:
-      #   run: ./attest.sh --config attest.toml --require-live
+      - name: Check the action's outputs are populated
+        run: |
+          set -eu
+          echo "attested:  ${{ steps.attest.outputs.attested }}"
+          echo "safeTx:    ${{ steps.attest.outputs.safe-tx-hash }}"
+          echo "canonical: ${{ steps.attest.outputs.canonical-sha256 }}"
+          [[ "${{ steps.attest.outputs.attested }}" == "true" ]]
+          [[ "${{ steps.attest.outputs.safe-tx-hash }}" =~ ^0x[0-9a-f]{64}$ ]]

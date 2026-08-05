@@ -41,10 +41,70 @@ diverges and the run prints **`NOT ATTESTED`** and exits non-zero.
 ./attest.sh                       # uses ./attest.toml
 ./attest.sh --config my.toml      # a different claim
 ./attest.sh --require-live        # fail (don't skip) if the live check can't run
+./attest.sh --json                # machine-readable verdict on stdout
 ./attest.sh --keep                # keep the temp clone for inspection
 ```
 
 Requirements: `git`, `foundry` (`forge` + `cast`), `jq`, `sha256sum`, `bash`.
+
+Exit code is the verdict: `0` attested, `1` not.
+
+### Machine-readable output
+
+`--json` writes the verdict to stdout and moves the human report to stderr, so a
+caller gets both without scraping colours:
+
+```bash
+./attest.sh --json 2>/dev/null | jq -r '.hashes.safe_tx'
+```
+
+```json
+{
+  "attested": true,
+  "producer": { "repo": "…", "commit": "df1d6f36…", "script": "script/BuildSafeTx.s.sol:BuildSafeTx" },
+  "safe": { "address": "0x111CEE…", "nonce": "42", "network": "ethereum", "version": "1.3.0" },
+  "hashes": {
+    "output_sha256": "f8b05de9…",
+    "canonical_sha256": "9057b9be…",
+    "domain": "0xf10a0411…",
+    "message": "0xe6548104…",
+    "safe_tx": "0xd0e33f3b…",
+    "safe_tx_solidity": "0xd0e33f3b…",
+    "safe_tx_live": ""
+  },
+  "nested": null,
+  "failures": []
+}
+```
+
+A hash that was skipped rather than computed is `""` — an empty `safe_tx_live`
+means the live check did not run, not that it passed. `nested` is `null` unless
+the claim names a child Safe. `failures` lists exactly what a `NOT ATTESTED`
+verdict is based on.
+
+## GitHub Action
+
+The action at the root of this repository runs the same script:
+
+```yaml
+- uses: actions/checkout@v4
+- uses: xsafe/forge-attest@<commit-sha>
+  with:
+    config: attest.toml
+    require-live: true
+```
+
+It installs Foundry, runs `attest.sh --json` against your config, writes the
+verdict to the job summary, and exposes `attested`, `safe-tx-hash`,
+`canonical-sha256`, `child-safe-tx-hash`, and the full `json` document as step
+outputs. Put `attest.toml` in your own ops repo and point `producer_repo` at it.
+
+**Pin the action to a commit SHA, not a tag.** A tag is mutable, and whoever can
+move it decides what "verified" means in your pipeline — which is the property
+this tool exists to remove. Pinning a SHA fixes the action, `attest.sh`, `lib/`,
+and the Solidity cross-check together, because they are all this one repository
+at one commit. Pin `foundry-version` for the same reason: `forge` re-runs the
+producer's script, so a moving toolchain can move the output bytes.
 
 ## Supported producer formats
 
@@ -278,13 +338,15 @@ between the bash and Solidity implementations fails the build.
 the full attestation pipeline on every push/PR and nightly. A green CI run is a
 public, timestamped attestation that a third party can rely on without re-running
 anything. (In CI, set `producer_repo` to a reachable git URL rather than a `file://`
-path.)
+path.) It runs through `uses: ./`, so the action published from this repo is
+exercised on every push rather than only in consumers' pipelines.
 
 ## Layout
 
 ```
 forge-attest/
 ├── attest.sh                     # orchestrator
+├── action.yml                    # GitHub Action wrapping attest.sh
 ├── attest.toml                   # the claim being attested
 ├── attest.batch.example.toml     # a commented claim for a Transaction Builder batch
 ├── lib/
