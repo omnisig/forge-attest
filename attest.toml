@@ -52,6 +52,17 @@ refund_receiver = "0x0000000000000000000000000000000000000000"
 #                           (fixed key order, quoted scalars, lowercase hex), so
 #                           it survives volatile metadata and formatting drift.
 # expected_safe_tx_hash     the EIP-712 digest owners sign.
+#
+# expected_forge_version    the toolchain that must re-run the script. `forge` is
+#                           an input to expected_output_sha256 as much as the
+#                           producer commit is: upgrade Foundry and the output
+#                           bytes can move, failing the run with nothing naming
+#                           the cause. Leave blank to record the version without
+#                           enforcing it; set it (e.g. "1.7.1-stable", matching
+#                           `forge --version`) to make the toolchain part of the
+#                           claim. The verdict always reports what actually ran.
+expected_forge_version    = ""
+
 expected_output_sha256    = "f8b05de9d16a5248543d266aedbd64b1275fd5165a111ccfe430f3c8ff415cd0"
 expected_canonical_sha256 = "9057b9be885254f9dd33b26d85d42f9cdc10b1010d66e2046fb8bf747cd1c073"
 expected_safe_tx_hash     = "0xd0e33f3b88aceb5122db6ad935c1d709c7602f8ed92fc6b27bdd507902bdf534"

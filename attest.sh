@@ -91,6 +91,10 @@ safe_network=$(toml_get "$CONFIG" safe_network)
 safe_address=$(toml_get "$CONFIG" safe_address)
 safe_nonce=$(toml_get "$CONFIG" safe_nonce)
 
+# Optional pin on the toolchain that re-runs the producer's script. See the
+# toolchain step below for why an unrecorded forge version is a real hazard.
+expected_forge_version=$(toml_get "$CONFIG" expected_forge_version)
+
 [[ -n "$producer_repo"   ]] || die "config: producer_repo is required"
 [[ -n "$producer_commit" ]] || die "config: producer_commit is required"
 [[ -n "$producer_script" ]] || die "config: producer_script is required"
@@ -115,6 +119,28 @@ printf '    commit   : %s\n' "$producer_commit"
 printf '    script   : %s\n' "$producer_script"
 echo
 
+# --- 0. the toolchain that will re-run the script -----------------------------
+# Step 2 re-runs `forge script` and step 3 pins its output byte-exactly, so the
+# forge build is an input to the claim as much as the producer commit is. Left
+# unrecorded, a Foundry upgrade shifts the output bytes and the run fails with
+# nothing pointing at the cause — and the quickest way to green is to blank out
+# expected_output_sha256, which throws away the strongest check for an unrelated
+# reason. Recording it makes a divergence self-explaining; pinning it is opt-in.
+step "Toolchain"
+forge_version=$(forge --version 2>/dev/null | head -1 | sed -E 's/^forge (Version: )?//')
+cast_version=$(cast  --version 2>/dev/null | head -1 | sed -E 's/^cast (Version: )?//')
+forge_commit=$(forge --version 2>/dev/null | awk '/Commit SHA:/ {print $3; exit}')
+printf '    forge    : %s%s\n' "$forge_version" "${forge_commit:+ ($forge_commit)}"
+printf '    cast     : %s\n' "$cast_version"
+if [[ -z "$expected_forge_version" ]]; then
+  warn "no expected_forge_version pinned — output bytes may move with the toolchain"
+elif [[ "$forge_version" == "$expected_forge_version" ]]; then
+  ok "matches pinned expected_forge_version"
+else
+  record_fail "forge version ($forge_version) != pinned expected_forge_version ($expected_forge_version)"
+fi
+echo
+
 # --- 1. clone the producer at the pinned commit -------------------------------
 step "Cloning producer at pinned commit"
 git clone --quiet "$producer_repo" "$WORK/repo" || die "git clone failed: $producer_repo"
@@ -124,6 +150,20 @@ actual_commit=$(git -C "$WORK/repo" rev-parse HEAD)
 [[ "$actual_commit" == "$producer_commit" ]] \
   || die "checked-out HEAD ($actual_commit) != pinned commit ($producer_commit)"
 ok "checked out $actual_commit"
+
+# The producer's own solc pin, if it has one. A repo that leaves solc unset gets
+# whatever the local foundry resolves, which is the same reproducibility hole one
+# level down — worth surfacing in the verdict rather than discovering later.
+producer_solc=""
+if [[ -f "$WORK/repo/foundry.toml" ]]; then
+  producer_solc=$(toml_get "$WORK/repo/foundry.toml" solc)
+  [[ -n "$producer_solc" ]] || producer_solc=$(toml_get "$WORK/repo/foundry.toml" solc_version)
+fi
+if [[ -n "$producer_solc" ]]; then
+  ok "producer pins solc $producer_solc"
+else
+  warn "producer does not pin solc — its build depends on the local toolchain"
+fi
 
 # --- 2. run the producer's Forge script ---------------------------------------
 step "Running the Forge script"
@@ -351,6 +391,10 @@ jq -n \
   --arg safe_nonce      "$safe_nonce" \
   --arg safe_network    "$safe_network" \
   --arg safe_version    "$safe_version" \
+  --arg forge_version   "$forge_version" \
+  --arg forge_commit    "$forge_commit" \
+  --arg cast_version    "$cast_version" \
+  --arg producer_solc   "$producer_solc" \
   --arg output_sha256    "$got_sha" \
   --arg canonical_sha256 "$canonical_sha" \
   --arg domain_hash      "$parent_domain_hash" \
@@ -367,6 +411,8 @@ jq -n \
       producer: { repo: $producer_repo, commit: $producer_commit, script: $producer_script },
       safe: { address: $safe_address, nonce: $safe_nonce,
               network: $safe_network, version: $safe_version },
+      toolchain: { forge: $forge_version, forge_commit: $forge_commit,
+                   cast: $cast_version, producer_solc: $producer_solc },
       hashes: {
         output_sha256:    $output_sha256,
         canonical_sha256: $canonical_sha256,

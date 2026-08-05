@@ -63,6 +63,7 @@ caller gets both without scraping colours:
   "attested": true,
   "producer": { "repo": "…", "commit": "df1d6f36…", "script": "script/BuildSafeTx.s.sol:BuildSafeTx" },
   "safe": { "address": "0x111CEE…", "nonce": "42", "network": "ethereum", "version": "1.3.0" },
+  "toolchain": { "forge": "1.7.1-stable", "forge_commit": "…", "cast": "1.7.1-stable", "producer_solc": "0.8.28" },
   "hashes": {
     "output_sha256": "f8b05de9…",
     "canonical_sha256": "9057b9be…",
