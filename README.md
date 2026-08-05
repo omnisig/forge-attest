@@ -324,6 +324,27 @@ claim.
 - Whether a nested approval will still be valid when it executes. The parent's nonce
   can move at any time, and only the live check can notice.
 
+### Running this is running the config's code
+
+`producer_setup` is executed with `bash -c`, and `forge script` runs the producer's
+Solidity. Both are the point — the tool cannot reproduce a build without running it
+— but it means **whoever can edit `attest.toml` can execute code on the runner.**
+
+In your own CI that is usually fine: the config is in your repo, behind review. Two
+cases deserve care.
+
+- **Fork pull requests.** With the standard `pull_request` trigger, a fork PR that
+  edits `attest.toml` gets code execution in your CI. GitHub runs it with a
+  read-only token and no access to secrets, so this is the ordinary "CI builds
+  untrusted code" situation — acceptable, worth knowing.
+- **Never use `pull_request_target`.** It runs with the base repo's secrets and a
+  writable token, against the *fork's* files. Combined with `producer_setup` that
+  hands an attacker your secrets. If you need attestation on fork PRs, keep
+  `pull_request` and accept that the run is untrusted.
+
+The same applies to `producer_repo`: it is cloned and its build is run. Point it at
+a repo you control.
+
 ## Tests
 
 The verifier has its own test suite; nothing it attests is worth much if its two hash
