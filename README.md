@@ -89,7 +89,7 @@ The action at the root of this repository runs the same script:
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: xsafe/forge-attest@<commit-sha>
+- uses: xsafe/forge-attest@1de27d7dd172c54dd00d1494a69cb203c05a8f07 # v1.0.0
   with:
     config: attest.toml
     require-live: true
