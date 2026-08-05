@@ -106,6 +106,11 @@ and the Solidity cross-check together, because they are all this one repository
 at one commit. Pin `foundry-version` for the same reason: `forge` re-runs the
 producer's script, so a moving toolchain can move the output bytes.
 
+That argument binds us too, so the action pins its own dependencies by commit
+SHA rather than by tag. Otherwise whoever could move a tag we referenced would
+get code execution inside the verification step of every pipeline using this
+action — the one step whose output everyone downstream is trusting.
+
 ## Supported producer formats
 
 `forge-attest` takes whatever Safe JSON your ops repo already emits — the format is
