@@ -6,7 +6,7 @@ from Solidity and `test/shell/run.sh` from bash; both assert the same hashes.
 
 | File | Format | What it covers |
 |------|--------|----------------|
-| `safe-tx-single.json` | `safe-tx` | A flat, complete EIP-712 SafeTx — the output of [`forge-attest-example-safe-ops`](https://github.com/omnisig/forge-attest-example-safe-ops) at commit `df1d6f36`. |
+| `safe-tx-single.json` | `safe-tx` | A flat, complete EIP-712 SafeTx — the output of [`forge-attest-example-safe-ops`](https://github.com/xsafe/forge-attest-example-safe-ops) at commit `df1d6f36`. |
 | `tx-builder-frax-optimism.json` | `tx-builder` | A real six-transaction batch (see provenance below). The main worked example. |
 | `tx-builder-frax-optimism-restamped.json` | `tx-builder` | The *same* batch with a different `createdAt` and `meta`, reordered keys, lowercased addresses, uppercased hex, and numbers where the original had quoted strings. Must normalise to identical bytes. |
 | `tx-builder-single.json` | `tx-builder` | A one-transaction batch with `"data": null` — a plain ETH transfer. Exercises the "don't wrap a single transaction" path. |
