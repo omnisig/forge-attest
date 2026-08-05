@@ -422,3 +422,15 @@ forge-attest/
 Solidity, and — live — `safe-tx-hashes-util`) from inputs you pin, and the two offline
 implementations fold batches independently rather than sharing code. Don't trust,
 verify.
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).
+
+One exception: [`lib/safe_hashes.sh`](lib/safe_hashes.sh) is vendored from
+[`safe-tx-hashes-util`](https://github.com/pcaversaccio/safe-tx-hashes-util) and stays
+under **AGPL-3.0-only** ([text](lib/LICENSE-AGPL-3.0.txt)). It powers the live check
+(#5), is redistributed verbatim with its licence header intact, and is invoked as a
+separate process. The MIT grant does not extend to it. If your policy disallows AGPL
+code, note that the four offline checks never touch that file — but you would be
+redistributing it if you fork this repo.
