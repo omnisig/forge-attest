@@ -1,0 +1,21 @@
+forge-attest
+Copyright (c) 2026 xsafe
+
+This product is licensed under the MIT Licence (see LICENSE), with the
+following exception. The MIT grant does not extend to it.
+
+--------------------------------------------------------------------------------
+
+lib/safe_hashes.sh
+
+  GNU Affero General Public License v3.0 only
+  Copyright (c) pcaversaccio
+  https://github.com/pcaversaccio/safe-tx-hashes-util
+
+  Redistributed verbatim, with its author and licence header intact, and
+  invoked by attest.sh as a separate process. The full licence text is at
+  lib/LICENSE-AGPL-3.0.txt; the pinned upstream commit and sha256 are
+  recorded in lib/VENDORED.md.
+
+  This file powers the live Safe Transaction Service check only. The four
+  offline checks never invoke it.

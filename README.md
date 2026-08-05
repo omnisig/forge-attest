@@ -425,7 +425,7 @@ verify.
 
 ## Licence
 
-MIT — see [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE), with the exception recorded in [`NOTICE`](NOTICE).
 
 One exception: [`lib/safe_hashes.sh`](lib/safe_hashes.sh) is vendored from
 [`safe-tx-hashes-util`](https://github.com/pcaversaccio/safe-tx-hashes-util) and stays
