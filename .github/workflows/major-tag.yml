@@ -1,0 +1,69 @@
+name: major-tag
+
+# Moves the rolling major alias (v1) to each published release, so consumers
+# who pin `@v1` get patches without a PR.
+#
+# The alias must never have a GitHub release attached to it. Release
+# immutability is enabled on this repository: publishing a release locks its
+# tag to a commit permanently, and a locked v1 can no longer be moved or
+# deleted while that release exists. That is unrecoverable — it would mean
+# abandoning v1 and migrating every consumer. Hence this workflow only ever
+# moves a bare ref, and refuses any tag that is not vX.Y.Z (see the guard
+# below, which is what stops a release published on v1 from moving v1).
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write # force-updates refs/tags/vN; nothing else
+
+jobs:
+  move:
+    # Prereleases must not move the alias: `@v1` means "latest stable v1", and
+    # a release candidate is exactly what someone pinning an alias opted out of.
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Move the major alias to the released commit
+        env:
+          # Passed through env rather than interpolated into the script. A tag
+          # name is repository content, and `${{ }}` splices it into the shell
+          # before bash ever sees it — the standard injection path.
+          TAG: ${{ github.event.release.tag_name }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Only ever move an alias for a real version tag. Anything else —
+          # including "v1" itself — is left untouched.
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::$TAG is not a vX.Y.Z tag; leaving the alias alone"
+            exit 0
+          fi
+
+          MAJOR="${TAG%%.*}"
+
+          # Resolve the commit the *release tag* names, not github.sha. On a
+          # release event github.sha can be the default branch tip, which may
+          # carry commits made after the tag — moving the alias there would
+          # publish unreleased code to everyone pinning @v1.
+          ref=$(gh api "repos/$REPO/git/ref/tags/$TAG")
+          sha=$(jq -r '.object.sha' <<<"$ref")
+          if [[ "$(jq -r '.object.type' <<<"$ref")" == "tag" ]]; then
+            # Annotated tag: dereference to the commit it wraps.
+            sha=$(gh api "repos/$REPO/git/tags/$sha" --jq '.object.sha')
+          fi
+
+          echo "Moving $MAJOR -> $sha ($TAG)"
+
+          if gh api "repos/$REPO/git/ref/tags/$MAJOR" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$REPO/git/refs/tags/$MAJOR" \
+              -f sha="$sha" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$REPO/git/refs" \
+              -f ref="refs/tags/$MAJOR" -f sha="$sha" >/dev/null
+          fi
+
+          echo "::notice::$MAJOR now points at $sha ($TAG)"
