@@ -95,14 +95,20 @@ runs:
           exit "${rc:-1}"
         fi
 
+        # Random heredoc delimiter: the document embeds config-derived strings,
+        # and on a fork PR the config is attacker-controlled. jq escapes
+        # newlines inside string values, so a bare delimiter line should not be
+        # reachable today — this just removes the question from review.
+        delim="FORGE_ATTEST_$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+
         {
           echo "attested=$(jq -r '.attested'                  /tmp/attest.json)"
           echo "safe-tx-hash=$(jq -r '.hashes.safe_tx'        /tmp/attest.json)"
           echo "canonical-sha256=$(jq -r '.hashes.canonical_sha256' /tmp/attest.json)"
           echo "child-safe-tx-hash=$(jq -r '.nested.safe_tx // ""'  /tmp/attest.json)"
-          echo "json<<FORGE_ATTEST_EOF"
+          echo "json<<$delim"
           cat /tmp/attest.json
-          echo "FORGE_ATTEST_EOF"
+          echo "$delim"
         } >> "$GITHUB_OUTPUT"
 
         exit "$rc"
