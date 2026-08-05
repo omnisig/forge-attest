@@ -103,8 +103,10 @@ outputs. Put `attest.toml` in your own ops repo and point `producer_repo` at it.
 move it decides what "verified" means in your pipeline — which is the property
 this tool exists to remove. Pinning a SHA fixes the action, `attest.sh`, `lib/`,
 and the Solidity cross-check together, because they are all this one repository
-at one commit. Pin `foundry-version` for the same reason: `forge` re-runs the
-producer's script, so a moving toolchain can move the output bytes.
+at one commit. `foundry-version` matters for the same reason — `forge` re-runs
+the producer's script, so a moving toolchain can move the output bytes — which
+is why it defaults to a pinned release rather than `stable`. Override it
+deliberately, and bump it as a reviewed change.
 
 That argument binds us too, so the action pins its own dependencies by commit
 SHA rather than by tag. Otherwise whoever could move a tag we referenced would

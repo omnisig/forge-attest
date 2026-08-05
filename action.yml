@@ -25,10 +25,11 @@ inputs:
   foundry-version:
     description: >
       Foundry version to install. This is part of the claim: forge re-runs the
-      producer's script, so a moving toolchain can move the output bytes. Pin it
-      alongside the action for a reproducible result.
+      producer's script, so a moving toolchain can move the output bytes. The
+      default is pinned rather than "stable" so that the default configuration
+      is the reproducible one; override it deliberately, not by accident.
     required: false
-    default: stable
+    default: v1.7.1
   summary:
     description: Write the verdict to the workflow job summary.
     required: false
