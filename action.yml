@@ -60,7 +60,7 @@ runs:
     # the action, attest.sh, lib/, and the Solidity cross-check together.
     - name: Install Foundry
       if: inputs.install-foundry == 'true'
-      uses: foundry-rs/foundry-toolchain@v1
+      uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       with:
         version: ${{ inputs.foundry-version }}
 
