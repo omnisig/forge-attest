@@ -17,7 +17,11 @@
 #  Matching hashes across all layers prove the submitted Safe tx is exactly what
 #  the script produced.
 #
-#  Usage: ./attest.sh [--config attest.toml] [--require-live] [--keep] [--help]
+#  Usage: ./attest.sh [--config attest.toml] [--require-live] [--json] [--keep] [--help]
+#
+#  --json emits a machine-readable verdict on stdout and moves the human report
+#  to stderr, so a caller gets both without parsing colours. The exit code is
+#  the same either way: 0 attested, 1 not.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,17 +31,28 @@ source "$SCRIPT_DIR/lib/common.sh"
 CONFIG="$SCRIPT_DIR/attest.toml"
 REQUIRE_LIVE=0
 KEEP=0
+JSON=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --config) CONFIG="$2"; shift 2 ;;
     --require-live) REQUIRE_LIVE=1; shift ;;
+    --json) JSON=1; shift ;;
     --keep) KEEP=1; shift ;;
     -h|--help)
       grep -E '^#' "$0" | sed -E 's/^#\??//' | sed -E 's/^ //'; exit 0 ;;
     *) die "unknown argument: $1 (try --help)" ;;
   esac
 done
+
+# In JSON mode stdout is reserved for the verdict document. Keep a handle on the
+# real stdout (fd 3) and point everything the run prints at stderr, so the human
+# report still streams to a CI log while stdout stays parseable.
+if [[ "$JSON" == 1 ]]; then
+  exec 3>&1 1>&2
+else
+  exec 3>/dev/null
+fi
 
 [[ -f "$CONFIG" ]] || die "config not found: $CONFIG"
 for bin in git forge cast jq sha256sum; do
@@ -83,6 +98,11 @@ safe_nonce=$(toml_get "$CONFIG" safe_nonce)
 
 FAILURES=()
 record_fail() { FAILURES+=("$1"); fail "$1"; }
+
+# Set inside conditional blocks below; declared here so the JSON verdict can
+# report them as empty rather than tripping `set -u` on a skipped check.
+sol_hash=""
+live_hash=""
 
 WORK="$(mktemp -d)"
 cleanup() { [[ "$KEEP" == 1 ]] && { warn "kept workdir: $WORK"; return; }; rm -rf "$WORK"; }
@@ -173,6 +193,9 @@ fi
 step "Deriving Safe tx hash (cast)"
 eval "$(bash "$SCRIPT_DIR/lib/derive.sh" "$canonical")"   # sets DOMAIN_HASH / MESSAGE_HASH / SAFE_TX_HASH
 cast_hash=$(lc "$SAFE_TX_HASH")
+# The nested block re-runs derive.sh for the child, overwriting these globals.
+parent_domain_hash="$DOMAIN_HASH"
+parent_message_hash="$MESSAGE_HASH"
 printf '    domain   : %s\n' "$DOMAIN_HASH"
 printf '    message  : %s\n' "$MESSAGE_HASH"
 printf '    safeTx   : %s\n' "$cast_hash"
@@ -317,6 +340,48 @@ else
 fi
 
 # --- verdict ------------------------------------------------------------------
+# The JSON document goes to fd 3 (real stdout under --json, /dev/null otherwise),
+# so this runs unconditionally and the two report formats cannot drift apart.
+jq -n \
+  --argjson attested "$([[ ${#FAILURES[@]} -eq 0 ]] && echo true || echo false)" \
+  --arg producer_repo   "$producer_repo" \
+  --arg producer_commit "$producer_commit" \
+  --arg producer_script "$producer_script" \
+  --arg safe_address    "$safe_address" \
+  --arg safe_nonce      "$safe_nonce" \
+  --arg safe_network    "$safe_network" \
+  --arg safe_version    "$safe_version" \
+  --arg output_sha256    "$got_sha" \
+  --arg canonical_sha256 "$canonical_sha" \
+  --arg domain_hash      "$parent_domain_hash" \
+  --arg message_hash     "$parent_message_hash" \
+  --arg safe_tx_hash     "$cast_hash" \
+  --arg safe_tx_solidity "$sol_hash" \
+  --arg safe_tx_live     "$live_hash" \
+  --arg child_safe       "$child_safe" \
+  --arg child_nonce      "$child_nonce" \
+  --arg child_safe_tx    "$child_hash" \
+  --args '
+    {
+      attested: $attested,
+      producer: { repo: $producer_repo, commit: $producer_commit, script: $producer_script },
+      safe: { address: $safe_address, nonce: $safe_nonce,
+              network: $safe_network, version: $safe_version },
+      hashes: {
+        output_sha256:    $output_sha256,
+        canonical_sha256: $canonical_sha256,
+        domain:           $domain_hash,
+        message:          $message_hash,
+        safe_tx:          $safe_tx_hash,
+        safe_tx_solidity: $safe_tx_solidity,
+        safe_tx_live:     $safe_tx_live
+      },
+      nested: (if $child_safe == "" then null else
+        { safe: $child_safe, nonce: $child_nonce, safe_tx: $child_safe_tx }
+      end),
+      failures: $ARGS.positional
+    }' "${FAILURES[@]+"${FAILURES[@]}"}" >&3
+
 echo
 if [[ ${#FAILURES[@]} -eq 0 ]]; then
   printf '%s%s ATTESTED %s the submitted Safe tx is exactly the output of %s@%s\n' \
