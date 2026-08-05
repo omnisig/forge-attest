@@ -114,6 +114,11 @@ SHA rather than by tag. Otherwise whoever could move a tag we referenced would
 get code execution inside the verification step of every pipeline using this
 action — the one step whose output everyone downstream is trusting.
 
+A pin nobody moves is its own problem, though: it freezes the repo on whatever
+was current the day it was written, missing exactly the security fixes that made
+pinning worth doing. [`.github/dependabot.yml`](.github/dependabot.yml) proposes
+the bumps; review decides; the pin stays a SHA.
+
 ## Supported producer formats
 
 `forge-attest` takes whatever Safe JSON your ops repo already emits — the format is

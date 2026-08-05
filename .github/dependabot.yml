@@ -1,0 +1,26 @@
+version: 2
+
+# SHA-pinning third-party actions is only half of it: a pin nobody moves is a
+# repo frozen on whatever was current the day it was written, quietly missing
+# the security fixes that make pinning worth doing. This is the other half —
+# Dependabot proposes the bump, review decides, and the pin stays a SHA.
+#
+# `directory: "/"` covers .github/workflows/ and the action.yml at the root, so
+# the action's own foundry-toolchain pin is tracked too.
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "Bump"
+    labels:
+      - dependencies
+    groups:
+      # One PR a month for routine bumps rather than one per action; a major
+      # version still arrives on its own, which is where the review effort
+      # belongs (see the v4 -> v7 checkout bump).
+      actions-minor:
+        update-types:
+          - minor
+          - patch
