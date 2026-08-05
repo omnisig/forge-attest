@@ -312,6 +312,17 @@ claim.
 - A nested approval pointing at a different transaction than the one under review —
   the approval is re-derived from the parent, never read back from it.
 
+**Trusts, and why that is safe**
+- The Safe Transaction Service (check #5) is queried over the network, but a
+  compromised or impersonated service can only cause a false *negative*. The
+  comparison is against a hash this tool derived offline from the script's own
+  output, so producing a false *positive* means returning exactly that hash —
+  which requires already knowing the honest answer, and gains an attacker
+  nothing. Treat an unreachable service as an unknown, not as a pass: that is
+  what `--require-live` is for.
+- The four offline checks need no network at all beyond cloning the pinned
+  producer commit, whose SHA is verified after checkout.
+
 **Does not catch (out of scope)**
 - Whether the script's *intent* is correct — `forge-attest` proves provenance, not
   that the transaction does what you want. Review the script.
@@ -323,6 +334,11 @@ claim.
   refused rather than guessed at.
 - Whether a nested approval will still be valid when it executes. The parent's nonce
   can move at any time, and only the live check can notice.
+- A SHA-1 collision on `producer_commit`. The checkout is verified against the
+  pinned SHA, but git commit ids are SHA-1, for which chosen-prefix collisions
+  have been demonstrated. Git's collision detection and GitHub's rejection of
+  known-colliding objects make this impractical rather than impossible; it is
+  accepted, not mitigated here.
 
 ### Running this is running the config's code
 
