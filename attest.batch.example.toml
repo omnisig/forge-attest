@@ -13,7 +13,7 @@
 # pass.
 
 # --- Producer -------------------------------------------------------------------
-producer_repo   = "https://github.com/xsafe/forge-attest-example-safe-ops"
+producer_repo   = "https://github.com/crossecute/forge-attest-example-safe-ops"
 producer_commit = "31d44a89684f6f3721eae59ada1d230a1738f6bb"
 producer_setup  = ""                                          # e.g. "forge install"
 producer_script = "script/BuildSafeBatch.s.sol:BuildSafeBatch"

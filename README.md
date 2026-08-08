@@ -1,6 +1,6 @@
 # forge-attest
 
-[![attest](https://github.com/xsafe/forge-attest/actions/workflows/attest.yml/badge.svg)](https://github.com/xsafe/forge-attest/actions/workflows/attest.yml)
+[![attest](https://github.com/crossecute/forge-attest/actions/workflows/attest.yml/badge.svg)](https://github.com/crossecute/forge-attest/actions/workflows/attest.yml)
 
 **Prove that a Gnosis Safe transaction is exactly the output of a specific Forge
 script — and was not manipulated on its way to the Safe.**
@@ -89,7 +89,7 @@ The action at the root of this repository runs the same script:
 
 ```yaml
 - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-- uses: xsafe/forge-attest@1de27d7dd172c54dd00d1494a69cb203c05a8f07 # v1.0.0
+- uses: crossecute/forge-attest@1de27d7dd172c54dd00d1494a69cb203c05a8f07 # v1.0.0
   with:
     config: attest.toml
     require-live: true

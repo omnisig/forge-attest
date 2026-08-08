@@ -6,7 +6,7 @@
 # your own Safe transactions.
 
 # --- Producer: the separate repo whose Forge script builds the Safe tx ---------
-producer_repo   = "https://github.com/xsafe/forge-attest-example-safe-ops"
+producer_repo   = "https://github.com/crossecute/forge-attest-example-safe-ops"
 producer_commit = "df1d6f369294b519e3c87fd5f7a5bdb980d91d01"
 producer_setup  = ""                                    # optional shell run before the script, e.g. "forge install"
 producer_script = "script/BuildSafeTx.s.sol:BuildSafeTx"
