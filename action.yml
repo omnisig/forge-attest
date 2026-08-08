@@ -1,6 +1,6 @@
 name: forge-attest
 description: Prove a queued Safe transaction is exactly the output of a pinned Forge script.
-author: xsafe
+author: crossecute
 
 # SECURITY: this action runs the code named by your attest.toml — `producer_setup`
 # via `bash -c`, and the producer repo's Forge script. Anyone who can edit that
